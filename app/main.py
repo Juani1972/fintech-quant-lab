@@ -7,7 +7,13 @@ from datetime import date
 
 import streamlit as st
 
-from app.config import APP_ICON, APP_TITLE, DEFAULT_END, DEFAULT_START, DEFAULT_TICKERS, LAYOUT
+from app.config import (
+    APP_ICON,
+    DEFAULT_END,
+    DEFAULT_START,
+    DEFAULT_TICKERS,
+    LAYOUT,
+)
 
 # ============================================================
 #  Configuración de la página
@@ -61,18 +67,11 @@ with st.sidebar:
 
     st.markdown("---")
 
-  
+    # --------------------------------------------------------
+    #  Botón de cierre (solo en modo local)
+    # --------------------------------------------------------
+    LOCAL_MODE = os.getenv("FQL_LOCAL_MODE", "true").lower() == "true"
 
-# --------------------------------------------------------
-#  Botón de cierre (solo en modo local)
-# --------------------------------------------------------
-import os
-import signal
-
-LOCAL_MODE = os.getenv("FQL_LOCAL_MODE", "true").lower() == "true"
-
-with st.sidebar:
-    st.markdown("---")
     if LOCAL_MODE:
         if st.button(
             "🚪 Cerrar aplicación",
@@ -80,11 +79,10 @@ with st.sidebar:
             use_container_width=True,
             help="Detiene el servidor Streamlit. Solo disponible en modo local.",
         ):
-            st.warning("Cerrando Fintech Quant Lab...")
+            st.warning("Cerrando Fintech Quant Lab... El servidor se detendrá en unos segundos.")
             os.kill(os.getpid(), signal.SIGTERM)
     else:
         st.caption("🔒 Botón de cierre deshabilitado (modo producción).")
-
 
 # ============================================================
 #  Contenido principal
@@ -105,6 +103,7 @@ st.markdown(
     | **🔗 Cointegración** | Pairs trading, test de Engle-Granger, z-score, half-life. |
     | **📊 Fama-French** | Regresión de 3 y 5 factores con interpretación de alpha. |
     | **⚠️ Riesgo** | VaR, Expected Shortfall, drawdown, Sharpe, Sortino. |
+    | **🧪 Backtest** | Motor de backtesting con anti-look-ahead y costes. |
 
     ---
 
@@ -115,10 +114,6 @@ st.markdown(
     3. Navega a la página del análisis que quieras realizar.
     4. Ajusta los parámetros específicos y pulsa **Ejecutar**.
     5. Descarga los resultados en CSV desde cada página.
-
-    ---
-
-    ### 📋 Estado actual de la sesión
     """
 )
 
@@ -144,7 +139,7 @@ st.info(
 st.markdown(
     """
     <div style='text-align: center; color: gray; font-size: 0.85em; margin-top: 3em;'>
-    Fintech Quant Lab · v0.1.0 · MIT License · 2026
+    Fintech Quant Lab · v0.2.0 · MIT License · 2026
     </div>
     """,
     unsafe_allow_html=True,
