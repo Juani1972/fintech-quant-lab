@@ -42,6 +42,8 @@ with st.sidebar:
         ["Pairs Trading (spread)", "Momentum", "Mean Reversion"],
     )
 
+    t2: str | None
+
     if strategy == "Pairs Trading (spread)":
         if len(tickers) < 2:
             callout("Pairs Trading requiere al menos 2 tickers.", variant="warning")
