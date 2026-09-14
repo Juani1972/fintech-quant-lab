@@ -3,22 +3,30 @@ import streamlit as st
 
 from app.core.data_loader import compute_log_returns, load_prices
 from app.core.fama_french import load_factors, run_regression
+from app.state import ensure_session_initialized, get_global_params
+from app.styles import callout, footer, hero, page_setup, section
 
-st.set_page_config(page_title="Fama-French", page_icon="📊", layout="wide")
-st.header("📊 Regresión Fama-French")
+page_setup("Fama-French", "📊")
 
-tickers_str = st.session_state.get("global_tickers", "KO, PEP")
-tickers = [t.strip().upper() for t in tickers_str.split(",") if t.strip()]
-start = st.session_state.get("global_start")
-end = st.session_state.get("global_end")
+hero(
+    title="Regresión Fama-French",
+    subtitle=(
+        "Regresión de 3 y 5 factores con errores estándar HAC (Newey-West). "
+        "Interpretación del alpha con t-estadístico robusto."
+    ),
+    icon="📊",
+)
+
+ensure_session_initialized()
+tickers, start, end = get_global_params()
 
 if not tickers:
-    st.error("Introduce al menos un ticker en la barra lateral.")
+    callout("Introduce al menos un ticker en la barra lateral.", variant="warning")
     st.stop()
 
 with st.sidebar:
     st.markdown("---")
-    st.subheader("🎛️ Parámetros Fama-French")
+    st.markdown("## 🎛️ Parámetros Fama-French")
     ticker = st.selectbox("Ticker", tickers)
     model = st.selectbox("Modelo", ["3", "5"], format_func=lambda x: f"{x} factores")
     cov_type = st.selectbox(
@@ -33,12 +41,13 @@ with st.sidebar:
     )
     run = st.button("🚀 Ejecutar regresión", type="primary", use_container_width=True)
 
+
 if run:
     with st.spinner("Descargando datos del activo..."):
         try:
             prices = load_prices(tickers, start, end)
         except (ValueError, ConnectionError) as e:
-            st.error(f"Error al cargar datos: {e}")
+            callout(f"Error al cargar datos: {e}", variant="danger")
             st.stop()
 
     returns = compute_log_returns(prices)[ticker]
@@ -47,7 +56,7 @@ if run:
         try:
             factors = load_factors(start, end, model=model)
         except (ValueError, ConnectionError) as e:
-            st.error(f"Error al cargar factores: {e}")
+            callout(f"Error al cargar factores: {e}", variant="danger")
             st.stop()
 
     try:
@@ -58,9 +67,10 @@ if run:
             maxlags=maxlags if maxlags > 0 else None,
         )
     except ValueError as e:
-        st.error(f"Error en la regresión: {e}")
+        callout(f"Error en la regresión: {e}", variant="danger")
         st.stop()
 
+    section("📊 Resultado de la regresión")
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Alpha", f"{result.alpha:.4%}")
     c2.metric("p-valor alpha", f"{result.alpha_pvalue:.4f}")
@@ -74,24 +84,37 @@ if run:
     )
 
     if result.alpha_pvalue < 0.05:
-        st.success(f"Alpha estadísticamente significativo (t={result.alpha_tstat:.2f}).")
+        callout(
+            f"Alpha estadísticamente significativo (t={result.alpha_tstat:.2f}).",
+            variant="success",
+        )
     else:
-        st.info(
+        callout(
             f"Alpha no significativo (t={result.alpha_tstat:.2f}). "
-            "El retorno se explica por los factores."
+            "El retorno se explica por los factores.",
+            variant="info",
         )
 
-    st.subheader("Betas de factores")
+    section("Betas de factores")
     betas_df = result.betas.rename("Beta").to_frame()
     betas_df["t-stat"] = result.betas_tstats
     betas_df["p-valor"] = result.betas_pvalues
     st.dataframe(betas_df, use_container_width=True)
 
-    st.subheader("Resumen completo")
-    st.text(result.summary)
+    with st.expander("📋 Resumen completo"):
+        st.text(result.summary)
 
     st.download_button(
         "⬇️ Descargar betas (CSV)",
         betas_df.to_csv().encode("utf-8"),
         file_name=f"ff_betas_{ticker}.csv",
     )
+
+else:
+    callout(
+        "Configura el ticker y el modelo en la barra lateral y pulsa "
+        "<strong>🚀 Ejecutar regresión</strong>.",
+        variant="info",
+    )
+
+footer()
