@@ -1,4 +1,4 @@
-"""Análisis de cointegración y pairs trading."""
+    """Análisis de cointegración y pairs trading."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -11,15 +11,7 @@ from statsmodels.tsa.stattools import adfuller, coint
 
 @dataclass
 class CointegrationResult:
-    """Resultado del test de cointegración y spread.
-
-    Incluye:
-        - p-value del test Engle-Granger.
-        - alpha y beta de la regresión y = alpha + beta*x.
-        - spread = y - alpha - beta*x.
-        - ADF del spread (lo importante para pairs trading).
-        - ADF individuales de y y x (contexto).
-    """
+    """Resultado del test de cointegración y spread."""
     pvalue: float
     alpha: float
     beta: float
@@ -34,13 +26,17 @@ class CointegrationResult:
 
 def adf_test(series: pd.Series) -> float:
     """Retorna el p-valor del test ADF."""
-    return adfuller(series.dropna())[1]
+    result = adfuller(series.dropna())
+    return float(result[1])
 
 
 def adf_full(series: pd.Series) -> tuple[float, float, dict[str, float]]:
     """Retorna (estadístico, p-valor, valores críticos) del test ADF."""
-    stat, pval, _, _, crit, _ = adfuller(series.dropna())
-    return float(stat), float(pval), {k: float(v) for k, v in crit.items()}
+    result = adfuller(series.dropna())
+    stat = float(result[0])
+    pval = float(result[1])
+    crit = {str(k): float(v) for k, v in result[4].items()}
+    return stat, pval, crit
 
 
 def engle_granger(y: pd.Series, x: pd.Series, trend: str = "c") -> CointegrationResult:
@@ -48,19 +44,11 @@ def engle_granger(y: pd.Series, x: pd.Series, trend: str = "c") -> Cointegration
 
     Modelo: y_t = alpha + beta * x_t + u_t
     Spread: u_t = y_t - alpha - beta * x_t
-
-    Args:
-        y: Serie dependiente (precio).
-        x: Serie independiente (precio).
-        trend: 'c' constante, 'ct' constante+tendencia, 'n' ninguna.
-
-    Returns:
-        CointegrationResult con alpha, beta, spread y ADF del spread.
     """
     df = pd.concat([y, x], axis=1).dropna()
     y_, x_ = df.iloc[:, 0], df.iloc[:, 1]
 
-    score, pvalue, _ = coint(y_, x_, trend=trend)
+    _, pvalue, _ = coint(y_, x_, trend=trend)
 
     fit = sm.OLS(y_, sm.add_constant(x_)).fit()
     alpha = float(fit.params.iloc[0])
@@ -89,14 +77,7 @@ def rolling_zscore(
     window: int = 60,
     shift: int = 1,
 ) -> pd.Series:
-    """Calcula el z-score rodante del spread.
-
-    Args:
-        spread: Serie del spread.
-        window: Ventana de cálculo.
-        shift: Si > 0, desplaza la media y std para usar solo información
-            disponible ANTES de la observación actual (evita look-ahead).
-    """
+    """Calcula el z-score rodante del spread."""
     mean = spread.rolling(window).mean()
     std = spread.rolling(window).std()
 
@@ -114,19 +95,23 @@ def half_life(spread: pd.Series) -> float:
     df = pd.concat([spread_lag, spread_diff], axis=1).dropna()
     df.columns = ["lag", "diff"]
 
-    beta = sm.OLS(df["diff"], sm.add_constant(df["lag"])).fit().params.iloc[1]
+    beta = float(sm.OLS(df["diff"], sm.add_constant(df["lag"])).fit().params.iloc[1])
     if beta >= 0:
-        return np.inf
-    return -np.log(2) / beta
+        return float("inf")
+    return float(-np.log(2) / beta)
 
 
-def generate_signals(zscore: pd.Series, entry: float = 2.0, exit_: float = 0.5) -> pd.Series:
+def generate_signals(
+    zscore: pd.Series,
+    entry: float = 2.0,
+    exit_: float = 0.5,
+) -> pd.Series:
     """Genera señales de trading a partir del z-score.
 
     Returns:
         Serie con valores: 1 (long spread), -1 (short spread), 0 (neutral).
     """
-    signals = pd.Series(0, index=zscore.index)
+    signals = pd.Series(0, index=zscore.index, dtype=int)
     position = 0
     for i, z in enumerate(zscore):
         if np.isnan(z):
