@@ -11,28 +11,31 @@ from app.core.walkforward import (
     signal_from_momentum,
     signal_from_pairs_trading,
 )
+from app.state import ensure_session_initialized, get_global_params
+from app.styles import callout, footer, hero, page_setup, section
 
-st.set_page_config(page_title="Optimización", page_icon="🎯", layout="wide")
-st.header("🎯 Optimización de Parámetros")
-st.caption(
-    "Grid search evaluado con walk-forward (OOS). Este método evita el "
-    "overfitting del grid search clásico porque puntúa cada combinación "
-    "por su rendimiento out-of-sample."
+page_setup("Optimización", "🎯")
+
+hero(
+    title="Optimización de Parámetros",
+    subtitle=(
+        "Grid search evaluado con walk-forward (OOS). Este método evita el "
+        "overfitting del grid search clásico porque puntúa cada combinación "
+        "por su rendimiento out-of-sample."
+    ),
+    icon="🎯",
 )
 
-tickers_str = st.session_state.get("global_tickers", "KO, PEP")
-tickers = [t.strip().upper() for t in tickers_str.split(",") if t.strip()]
-start = st.session_state.get("global_start")
-end = st.session_state.get("global_end")
+ensure_session_initialized()
+tickers, start, end = get_global_params()
 
 if len(tickers) < 1:
-    st.error("Introduce al menos un ticker en la barra lateral.")
+    callout("Introduce al menos un ticker en la barra lateral.", variant="warning")
     st.stop()
 
 with st.sidebar:
     st.markdown("---")
-    st.subheader("🎛️ Configuración")
-
+    st.markdown("## 🎛️ Configuración")
     strategy = st.selectbox(
         "Estrategia",
         ["Momentum", "Mean Reversion", "Pairs Trading (spread)"],
@@ -40,7 +43,7 @@ with st.sidebar:
 
     if strategy == "Pairs Trading (spread)":
         if len(tickers) < 2:
-            st.error("Pairs Trading requiere al menos 2 tickers.")
+            callout("Pairs Trading requiere al menos 2 tickers.", variant="warning")
             st.stop()
         t1 = st.selectbox("Ticker 1", tickers, index=0)
         t2 = st.selectbox("Ticker 2", tickers, index=1)
@@ -80,7 +83,7 @@ if run:
         try:
             prices = load_prices(tickers, start, end)
         except (ValueError, ConnectionError) as e:
-            st.error(f"Error al cargar datos: {e}")
+            callout(f"Error al cargar datos: {e}", variant="danger")
             st.stop()
 
     if strategy == "Pairs Trading (spread)":
@@ -88,7 +91,7 @@ if run:
             coint = engle_granger(prices[t1], prices[t2])
             series = coint.spread
         except Exception as e:
-            st.error(f"Error calculando cointegración: {e}")
+            callout(f"Error calculando cointegración: {e}", variant="danger")
             st.stop()
 
         def factory(params):
@@ -116,7 +119,8 @@ if run:
         param_grid = {"window": windows, "entry": entries}
 
     if not param_grid or any(len(v) == 0 for v in param_grid.values()):
-        st.error("Configura al menos un valor en cada parámetro del grid.")
+        callout("Configura al menos un valor en cada parámetro del grid.",
+                variant="warning")
         st.stop()
 
     with st.spinner("Ejecutando grid search con walk-forward..."):
@@ -130,12 +134,15 @@ if run:
                 test_size=test_size,
             )
         except ValueError as e:
-            st.error(f"Error en la optimización: {e}")
+            callout(f"Error en la optimización: {e}", variant="danger")
             st.stop()
 
-    st.success(f"Grid completado: {len(result.grid)} combinaciones evaluadas.")
+    callout(
+        f"Grid completado: <strong>{len(result.grid)} combinaciones</strong> evaluadas.",
+        variant="success",
+    )
 
-    st.subheader("🏆 Mejor combinación (según OOS)")
+    section("🏆 Mejor combinación (según OOS)")
     col1, col2 = st.columns([1, 2])
     with col1:
         st.markdown("**Parámetros óptimos:**")
@@ -148,7 +155,7 @@ if run:
         })
         st.dataframe(best_df.style.format("{:.4f}"), use_container_width=True)
 
-    st.subheader("📋 Grid completo")
+    section("📋 Grid completo")
     display_cols = result.param_names + [
         f"oos_{objective}", f"is_{objective}",
         "oos_sharpe", "oos_max_drawdown", "oos_n_trades",
@@ -160,7 +167,7 @@ if run:
     )
 
     if len(result.param_names) >= 2:
-        st.subheader("🔥 Heatmap de sensibilidad")
+        section("🔥 Heatmap de sensibilidad")
         x_param = result.param_names[0]
         y_param = result.param_names[1]
         metric_col = f"oos_{objective}"
@@ -168,19 +175,20 @@ if run:
             hm = heatmap_data(result.grid, x_param, y_param, metric_col)
             fig = px.imshow(
                 hm.values,
-                x=hm.columns,
-                y=hm.index,
+                x=list(hm.columns),
+                y=list(hm.index),
                 labels={"x": x_param, "y": y_param, "color": metric_col},
                 color_continuous_scale="RdYlGn",
                 aspect="auto",
             )
             st.plotly_chart(fig, use_container_width=True)
-            st.caption(
-                "Busca una **meseta** verde alrededor del óptimo. "
-                "Un pico aislado indica overfitting."
+            callout(
+                "Busca una <strong>meseta</strong> verde alrededor del óptimo. "
+                "Un pico aislado indica overfitting.",
+                variant="info",
             )
         except Exception as e:
-            st.info(f"No se pudo generar el heatmap: {e}")
+            callout(f"No se pudo generar el heatmap: {e}", variant="info")
 
     st.download_button(
         "⬇️ Descargar grid completo (CSV)",
@@ -189,7 +197,10 @@ if run:
     )
 
 else:
-    st.info(
+    callout(
         "Configura la estrategia y el grid de parámetros en la barra lateral "
-        "y pulsa **🚀 Optimizar**."
+        "y pulsa <strong>🚀 Optimizar</strong>.",
+        variant="info",
     )
+
+footer()
