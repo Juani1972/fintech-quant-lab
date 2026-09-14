@@ -1,4 +1,4 @@
- """Optimización de parámetros de estrategias."""
+"""Optimización de parámetros de estrategias."""
 from __future__ import annotations
 
 from collections.abc import Callable

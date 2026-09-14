@@ -10,14 +10,13 @@ generaliza.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 import numpy as np
 import pandas as pd
 
-from app.core.backtest import BacktestResult, run_backtest
-
+from app.core.backtest import run_backtest
 
 # Tipo: función que recibe precios IS y devuelve una señal completa
 # (indexada por el índice completo de precios) para OOS.

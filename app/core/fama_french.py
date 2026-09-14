@@ -9,7 +9,6 @@ import pandas_datareader.data as web
 import statsmodels.api as sm
 import streamlit as st
 
-
 FACTOR_COLS = {
     "3": ["Mkt-RF", "SMB", "HML"],
     "5": ["Mkt-RF", "SMB", "HML", "RMW", "CMA"],
