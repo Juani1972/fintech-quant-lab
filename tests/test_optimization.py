@@ -34,6 +34,14 @@ def test_expand_grid():
     assert {"a": 1, "b": 10} in combos
 
 
+def test_expand_grid_empty():
+    assert _expand_grid({}) == []
+
+
+def test_expand_grid_empty_values():
+    assert _expand_grid({"a": []}) == []
+
+
 def test_grid_search_runs(prices_series):
     result = grid_search(
         prices=prices_series,
@@ -52,6 +60,11 @@ def test_grid_search_empty_grid(prices_series):
         grid_search(prices_series, _momentum_factory, {})
 
 
+def test_grid_search_empty_values(prices_series):
+    with pytest.raises(ValueError, match="vacío"):
+        grid_search(prices_series, _momentum_factory, {"window": []})
+
+
 def test_grid_search_invalid_objective(prices_series):
     with pytest.raises(ValueError, match="no encontrado"):
         grid_search(
@@ -68,8 +81,6 @@ def test_heatmap_data(prices_series):
         param_grid={"window": [10, 20, 30]},
         objective="sharpe",
     )
-    # Solo un parámetro, así que heatmap de un solo eje
-    # Añadimos otro parámetro artificial no usado
     grid = result.grid.copy()
     grid["dummy"] = [1, 2, 3]
     hm = heatmap_data(grid, x_param="window", y_param="dummy", metric="sharpe")
