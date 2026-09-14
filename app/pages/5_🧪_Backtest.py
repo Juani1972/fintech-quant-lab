@@ -161,6 +161,10 @@ with st.sidebar:
         ["Pairs Trading", "Momentum", "Mean Reversion"],
     )
 
+    ticker_b: str | None
+    entry: float | None
+    exit_: float | None
+
     if strategy == "Pairs Trading":
         if len(tickers) < 2:
             callout("Pairs Trading requiere al menos 2 tickers.", variant="warning")
@@ -211,6 +215,9 @@ if run:
     with st.spinner(f"Generando señales ({strategy})..."):
         try:
             if strategy == "Pairs Trading":
+                assert ticker_b is not None and entry is not None and exit_ is not None, (
+                    "ticker_b/entry/exit_ solo son None cuando strategy != 'Pairs Trading'"
+                )
                 signals, asset_series = strategy_pairs_trading(
                     prices, ticker_a, ticker_b, window, entry, exit_,
                 )
@@ -219,6 +226,9 @@ if run:
                 signals, asset_series = strategy_momentum(prices[ticker_a], window)
                 benchmark_prices = prices[ticker_a]
             else:
+                assert entry is not None and exit_ is not None, (
+                    "entry/exit_ solo son None cuando strategy == 'Momentum'"
+                )
                 signals, asset_series = strategy_mean_reversion(
                     prices[ticker_a], window, entry, exit_,
                 )
