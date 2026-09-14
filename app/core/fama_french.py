@@ -1,4 +1,4 @@
-"""Regresiones Fama-French con descarga de factores y errores HAC."""
+"""Regresiones Fama-French con descarga de factores diarios y errores HAC."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -14,13 +14,16 @@ FACTOR_COLS = {
     "5": ["Mkt-RF", "SMB", "HML", "RMW", "CMA"],
 }
 
+# Datasets DIARIOS del data library de Kenneth French
+DATASETS = {
+    "3": "F-F_Research_Data_Factors_daily",
+    "5": "F-F_Research_Data_5_Factors_2x3_daily",
+}
+
 
 @dataclass
 class FamaFrenchResult:
-    """Resultado de la regresión Fama-French.
-
-    Todos los p-values son robustos (HAC / Newey-West) por defecto.
-    """
+    """Resultado de la regresión Fama-French con HAC."""
     alpha: float
     alpha_pvalue: float
     alpha_tstat: float
@@ -35,29 +38,42 @@ class FamaFrenchResult:
     summary: str
 
 
-def load_factors(start: date, end: date, model: str = "3") -> pd.DataFrame:
+def load_factors(
+    start: date,
+    end: date,
+    model: str = "3",
+    frequency: str = "daily",
+) -> pd.DataFrame:
     """Descarga los factores Fama-French del data library de Kenneth French.
 
     Args:
         start: Fecha de inicio.
         end: Fecha de fin.
         model: '3' o '5' factores.
+        frequency: 'daily' o 'monthly'. **Importante**: si tus retornos son
+            diarios, usa 'daily' para evitar perder la mayoría de observaciones
+            al hacer dropna.
 
     Returns:
         DataFrame con factores en decimal, indexado por fecha.
 
     Raises:
-        ValueError: Si el modelo no es '3' ni '5'.
+        ValueError: Si el modelo o la frecuencia no son soportados.
         ConnectionError: Si falla la descarga.
     """
     if model not in FACTOR_COLS:
         raise ValueError(f"Modelo '{model}' no soportado. Usa '3' o '5'.")
 
-    dataset = (
-        "F-F_Research_Data_Factors"
-        if model == "3"
-        else "F-F_Research_Data_5_Factors_2x3"
-    )
+    if frequency == "daily":
+        dataset = DATASETS[model]
+    elif frequency == "monthly":
+        dataset = (
+            "F-F_Research_Data_Factors"
+            if model == "3"
+            else "F-F_Research_Data_5_Factors_2x3"
+        )
+    else:
+        raise ValueError(f"Frecuencia '{frequency}' no soportada. Usa 'daily' o 'monthly'.")
 
     try:
         raw = web.DataReader(dataset, "famafrench", start=start, end=end)[0]
@@ -85,19 +101,19 @@ def run_regression(
     Modelo: R_i - R_f = alpha + sum(beta_k * Factor_k) + epsilon
 
     Args:
-        returns: Serie de retornos del activo.
+        returns: Serie de retornos del activo (debe estar en la MISMA
+            frecuencia que `factors`).
         factors: DataFrame de factores (salida de load_factors).
         model: '3' o '5'.
         risk_free: Nombre de la columna de tasa libre de riesgo.
-        cov_type: Tipo de covarianza:
-            - 'HAC': Newey-West (robusto a heterocedasticidad y autocorrelación).
-            - 'HC0', 'HC1', 'HC2', 'HC3': White y variantes (solo heterocedasticidad).
-            - 'nonrobust': OLS estándar.
-        maxlags: Número de lags para HAC. Si None, se calcula automáticamente
-            como int(4 * (n/100)^(2/9)), recomendación de Newey-West.
+        cov_type: 'HAC' (Newey-West), 'HC3', 'nonrobust'.
+        maxlags: Nº de lags para HAC. None → regla automática.
 
     Returns:
         FamaFrenchResult con p-values robustos.
+
+    Raises:
+        ValueError: Si no hay datos superpuestos suficientes.
     """
     if model not in FACTOR_COLS:
         raise ValueError(f"Modelo '{model}' no soportado.")
@@ -107,6 +123,12 @@ def run_regression(
     df = pd.concat([returns.rename("ret"), factors], axis=1).dropna()
     if df.empty:
         raise ValueError("No hay datos superpuestos entre retornos y factores.")
+
+    if len(df) < 20:
+        raise ValueError(
+            f"Solo {len(df)} observaciones superpuestas. "
+            "¿Estás usando factores diarios con retornos diarios?"
+        )
 
     df["excess"] = df["ret"] - df[risk_free]
 
