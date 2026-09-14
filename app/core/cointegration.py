@@ -1,4 +1,4 @@
-    """Análisis de cointegración y pairs trading."""
+"""Análisis de cointegración y pairs trading."""
 from __future__ import annotations
 
 from dataclasses import dataclass
