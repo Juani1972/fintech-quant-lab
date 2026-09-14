@@ -2,7 +2,7 @@
 import numpy as np
 import pandas as pd
 
-from app.core.cointegration import engle_granger, half_life, rolling_zscore
+from app.core.cointegration import engle_granger, half_life
 
 
 def test_engle_granger_cointegrated():

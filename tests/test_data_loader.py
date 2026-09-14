@@ -1,7 +1,6 @@
 """Tests para data_loader."""
 import numpy as np
 import pandas as pd
-import pytest
 
 from app.core.data_loader import compute_log_returns
 

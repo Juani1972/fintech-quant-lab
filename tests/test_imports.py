@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pytest
 
-
 CORE_DIR = Path(__file__).parent.parent / "app" / "core"
 
 

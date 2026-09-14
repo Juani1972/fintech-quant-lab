@@ -12,7 +12,6 @@ import pytest
 streamlit = pytest.importorskip("streamlit")
 from streamlit.testing.v1 import AppTest  # noqa: E402
 
-
 APP_DIR = Path(__file__).parent.parent / "app"
 
 
