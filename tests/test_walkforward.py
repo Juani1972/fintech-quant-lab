@@ -61,7 +61,6 @@ def test_walk_forward_windows_no_overlap():
         test_size=50,
         step=50,
     )
-    # Verificar que cada ventana de test no solapa con la siguiente
     for i in range(len(result.windows) - 1):
         assert result.windows[i].test_end < result.windows[i + 1].test_start
 
