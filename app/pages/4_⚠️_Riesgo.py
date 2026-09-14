@@ -1,4 +1,4 @@
-"""Página de métricas de riesgo."""
+ """Página de métricas de riesgo."""
 import streamlit as st
 
 from app.core.data_loader import compute_log_returns, load_prices
@@ -15,38 +15,47 @@ from app.core.risk import (
     value_at_risk,
     value_at_risk_parametric,
 )
+from app.state import ensure_session_initialized, get_global_params
+from app.styles import callout, footer, hero, page_setup, section
 
-st.set_page_config(page_title="Riesgo", page_icon="⚠️", layout="wide")
-st.header("⚠️ Medición de Riesgo")
+page_setup("Riesgo", "⚠️")
 
-tickers_str = st.session_state.get("global_tickers", "KO, PEP")
-tickers = [t.strip().upper() for t in tickers_str.split(",") if t.strip()]
-start = st.session_state.get("global_start")
-end = st.session_state.get("global_end")
+hero(
+    title="Medición de Riesgo",
+    subtitle=(
+        "VaR histórico y paramétrico, Expected Shortfall, drawdown, "
+        "Sharpe, Sortino y Calmar."
+    ),
+    icon="⚠️",
+)
+
+ensure_session_initialized()
+tickers, start, end = get_global_params()
 
 if not tickers:
-    st.error("Introduce al menos un ticker en la barra lateral.")
+    callout("Introduce al menos un ticker en la barra lateral.", variant="warning")
     st.stop()
 
 with st.sidebar:
     st.markdown("---")
-    st.subheader("🎛️ Parámetros de riesgo")
+    st.markdown("## 🎛️ Parámetros de riesgo")
     ticker = st.selectbox("Ticker", tickers)
     confidence = st.slider("Nivel de confianza", 0.90, 0.99, 0.95, 0.01)
     window = st.slider("Ventana VaR rodante", 50, 500, 250)
     run = st.button("🚀 Calcular riesgo", type="primary", use_container_width=True)
+
 
 if run:
     with st.spinner("Descargando datos..."):
         try:
             prices = load_prices(tickers, start, end)
         except (ValueError, ConnectionError) as e:
-            st.error(f"Error al cargar datos: {e}")
+            callout(f"Error al cargar datos: {e}", variant="danger")
             st.stop()
 
     returns = compute_log_returns(prices)[ticker]
 
-    st.subheader("📉 VaR y Expected Shortfall")
+    section("📉 VaR y Expected Shortfall")
     c1, c2, c3, c4 = st.columns(4)
     c1.metric(f"VaR hist. {confidence:.0%}", f"{value_at_risk(returns, confidence):.4%}")
     c2.metric(
@@ -59,14 +68,14 @@ if run:
         f"{expected_shortfall_parametric(returns, confidence):.4%}",
     )
 
-    st.subheader("📊 Ratios ajustados por riesgo")
+    section("📊 Ratios ajustados por riesgo")
     r1, r2, r3, r4 = st.columns(4)
     r1.metric("Sharpe", f"{sharpe_ratio(returns, periods_per_year=252):.3f}")
     r2.metric("Sortino", f"{sortino_ratio(returns, periods_per_year=252):.3f}")
     r3.metric("Calmar", f"{calmar_ratio(returns, periods_per_year=252):.3f}")
     r4.metric("Max Drawdown", f"{max_drawdown(prices[ticker]):.2%}")
 
-    st.subheader("VaR rodante")
+    section("VaR rodante")
     st.plotly_chart(
         line_chart(
             rolling_var(returns, window, confidence),
@@ -75,8 +84,17 @@ if run:
         use_container_width=True,
     )
 
-    st.subheader("Drawdown")
+    section("Drawdown")
     st.plotly_chart(
         drawdown_chart(drawdown_series(prices[ticker])),
         use_container_width=True,
     )
+
+else:
+    callout(
+        "Configura el ticker y los parámetros en la barra lateral y pulsa "
+        "<strong>🚀 Calcular riesgo</strong>.",
+        variant="info",
+    )
+
+footer()
