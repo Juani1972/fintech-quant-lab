@@ -1,4 +1,4 @@
-"""Punto de entrada de la aplicación Streamlit - Fintech Quant Lab."""
+"""Portada principal de Fintech Quant Lab."""
 from __future__ import annotations
 
 import os
@@ -12,21 +12,24 @@ from app.config import (
     DEFAULT_END,
     DEFAULT_START,
     DEFAULT_TICKERS,
-    LAYOUT,
+    PAGES,
+)
+from app.styles import (
+    callout,
+    footer,
+    hero,
+    page_card,
+    page_setup,
+    section,
 )
 
 # ============================================================
-#  Configuración de la página
+#  Configuración + CSS
 # ============================================================
-st.set_page_config(
-    page_title="Fintech Quant Lab",
-    page_icon=APP_ICON,
-    layout=LAYOUT,
-    initial_sidebar_state="expanded",
-)
+page_setup("Fintech Quant Lab", APP_ICON)
 
 # ============================================================
-#  Estado inicial de sesión (parámetros globales)
+#  Estado de sesión
 # ============================================================
 if "global_tickers" not in st.session_state:
     st.session_state["global_tickers"] = ", ".join(DEFAULT_TICKERS)
@@ -36,10 +39,11 @@ if "global_end" not in st.session_state:
     st.session_state["global_end"] = DEFAULT_END
 
 # ============================================================
-#  Barra lateral: parámetros globales compartidos
+#  Sidebar: parámetros globales
 # ============================================================
 with st.sidebar:
-    st.header("⚙️ Parámetros globales")
+    st.markdown("## ⚙️ Parámetros globales")
+    st.caption("Compartidos entre todas las páginas.")
 
     st.text_input(
         "Tickers (separados por coma)",
@@ -63,15 +67,12 @@ with st.sidebar:
             max_value=date.today(),
         )
 
-    st.caption("Estos parámetros se comparten entre todas las páginas.")
-
-    st.markdown("---")
+    st.divider()
 
     # --------------------------------------------------------
-    #  Botón de cierre (solo en modo local)
+    #  Botón de cierre (solo local)
     # --------------------------------------------------------
     LOCAL_MODE = os.getenv("FQL_LOCAL_MODE", "true").lower() == "true"
-
     if LOCAL_MODE:
         if st.button(
             "🚪 Cerrar aplicación",
@@ -79,68 +80,92 @@ with st.sidebar:
             use_container_width=True,
             help="Detiene el servidor Streamlit. Solo disponible en modo local.",
         ):
-            st.warning("Cerrando Fintech Quant Lab... El servidor se detendrá en unos segundos.")
+            st.warning("Cerrando Fintech Quant Lab...")
             os.kill(os.getpid(), signal.SIGTERM)
     else:
         st.caption("🔒 Botón de cierre deshabilitado (modo producción).")
 
 # ============================================================
-#  Contenido principal
+#  Hero
 # ============================================================
-st.title(f"{APP_ICON} Fintech Quant Lab")
-
-st.markdown(
-    """
-    ### Análisis cuantitativo de series temporales financieras
-
-    Bienvenido a **Fintech Quant Lab**, una aplicación visual para realizar
-    análisis avanzados sobre datos de mercado. Usa el menú lateral para
-    navegar entre los distintos módulos:
-
-    | Módulo | Descripción |
-    |---|---|
-    | **📈 GARCH** | Modelado de volatilidad condicional (GARCH, EGARCH, GJR-GARCH). |
-    | **🔗 Cointegración** | Pairs trading, test de Engle-Granger, z-score, half-life. |
-    | **📊 Fama-French** | Regresión de 3 y 5 factores con interpretación de alpha. |
-    | **⚠️ Riesgo** | VaR, Expected Shortfall, drawdown, Sharpe, Sortino. |
-    | **🧪 Backtest** | Motor de backtesting con anti-look-ahead y costes. |
-
-    ---
-
-    ### 🚀 Cómo empezar
-
-    1. Introduce los **tickers** en la barra lateral (ej: `KO, PEP`).
-    2. Selecciona el **rango de fechas**.
-    3. Navega a la página del análisis que quieras realizar.
-    4. Ajusta los parámetros específicos y pulsa **Ejecutar**.
-    5. Descarga los resultados en CSV desde cada página.
-    """
+hero(
+    title="Fintech Quant Lab",
+    subtitle=(
+        "Plataforma de análisis cuantitativo para series temporales financieras: "
+        "volatilidad, cointegración, factores de riesgo, backtesting, walk-forward, "
+        "optimización y análisis de robustez."
+    ),
+    icon=APP_ICON,
 )
 
-# ------------------------------------------------------------
-#  Mostrar los parámetros activos en la portada
-# ------------------------------------------------------------
+# ============================================================
+#  Estado de la sesión
+# ============================================================
+section("📋 Estado de la sesión")
+
 tickers_actuales = st.session_state.get("global_tickers", "")
 fecha_ini = st.session_state.get("global_start", DEFAULT_START)
 fecha_fin = st.session_state.get("global_end", DEFAULT_END)
 
-col1, col2, col3 = st.columns(3)
-col1.metric("Tickers seleccionados", tickers_actuales or "—")
-col2.metric("Fecha inicio", str(fecha_ini))
-col3.metric("Fecha fin", str(fecha_fin))
+n_tickers = len([t for t in tickers_actuales.split(",") if t.strip()])
+dias = (fecha_fin - fecha_ini).days if isinstance(fecha_ini, date) and isinstance(fecha_fin, date) else 0
 
-st.markdown("---")
+cols = st.columns(4)
+with cols[0]:
+    st.metric("Tickers", n_tickers)
+with cols[1]:
+    st.metric("Fecha inicio", str(fecha_ini))
+with cols[2]:
+    st.metric("Fecha fin", str(fecha_fin))
+with cols[3]:
+    st.metric("Rango", f"{dias} días")
 
-st.info(
-    "💡 **Consejo**: Los datos se cachean durante 1 hora. "
-    "Si cambias los tickers o las fechas, la descarga se realizará automáticamente."
+st.markdown("")
+
+# ============================================================
+#  Módulos disponibles
+# ============================================================
+section("🧭 Módulos disponibles")
+
+st.caption(
+    "Selecciona un módulo en el menú lateral. "
+    "Los parámetros globales (tickers y fechas) se aplican a todos."
 )
 
-st.markdown(
-    """
-    <div style='text-align: center; color: gray; font-size: 0.85em; margin-top: 3em;'>
-    Fintech Quant Lab · v0.2.0 · MIT License · 2026
-    </div>
-    """,
-    unsafe_allow_html=True,
+# Grid de tarjetas: 2 columnas
+for i in range(0, len(PAGES), 2):
+    cols = st.columns(2, gap="medium")
+    with cols[0]:
+        p = PAGES[i]
+        page_card(p["icon"], p["name"], p["description"])
+    if i + 1 < len(PAGES):
+        with cols[1]:
+            p = PAGES[i + 1]
+            page_card(p["icon"], p["name"], p["description"])
+    st.markdown("")
+
+# ============================================================
+#  Flujo recomendado
+# ============================================================
+section("🔀 Flujo de investigación recomendado")
+
+callout(
+    "<strong>1.</strong> <strong>GARCH</strong> — analiza la volatilidad del activo.<br>"
+    "<strong>2.</strong> <strong>Cointegración</strong> — busca pares con relación estable.<br>"
+    "<strong>3.</strong> <strong>Backtest</strong> — simula la estrategia con costes.<br>"
+    "<strong>4.</strong> <strong>Walk-Forward</strong> — valida out-of-sample.<br>"
+    "<strong>5.</strong> <strong>Optimización</strong> — ajusta parámetros con WF.<br>"
+    "<strong>6.</strong> <strong>Robustez</strong> — Monte Carlo + sensitivity + score.",
+    variant="info",
 )
+
+callout(
+    "💡 <strong>Consejo</strong>: los datos se cachean durante 1 hora. "
+    "Si cambias los tickers o las fechas, la descarga se realizará automáticamente.",
+    variant="warning",
+)
+
+# ============================================================
+#  Footer
+# ============================================================
+footer()
