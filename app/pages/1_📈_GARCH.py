@@ -14,7 +14,6 @@ from app.core.plotting import line_chart
 st.set_page_config(page_title="GARCH", page_icon="📈", layout="wide")
 st.header("📈 Modelado GARCH de Volatilidad")
 
-# --- Leer parámetros globales ---
 tickers_str = st.session_state.get("global_tickers", "KO, PEP")
 tickers = [t.strip().upper() for t in tickers_str.split(",") if t.strip()]
 start = st.session_state.get("global_start")
@@ -24,7 +23,6 @@ if not tickers:
     st.error("Introduce al menos un ticker en la barra lateral.")
     st.stop()
 
-# --- Parámetros específicos de esta página ---
 with st.sidebar:
     st.markdown("---")
     st.subheader("🎛️ Parámetros GARCH")
