@@ -12,28 +12,31 @@ from app.core.walkforward import (
     signal_from_pairs_trading,
     walk_forward_analysis,
 )
+from app.state import ensure_session_initialized, get_global_params
+from app.styles import callout, footer, hero, page_setup, section
 
-st.set_page_config(page_title="Walk-Forward", page_icon="🔬", layout="wide")
-st.header("🔬 Walk-Forward Analysis")
-st.caption(
-    "Divide los datos en ventanas sucesivas de entrenamiento (IS) y prueba (OOS). "
-    "Sirve para detectar overfitting: si OOS se degrada mucho respecto a IS, "
-    "la estrategia no generaliza."
+page_setup("Walk-Forward", "🔬")
+
+hero(
+    title="Walk-Forward Analysis",
+    subtitle=(
+        "Divide los datos en ventanas sucesivas de entrenamiento (IS) y prueba (OOS). "
+        "Sirve para detectar overfitting: si OOS se degrada mucho respecto a IS, "
+        "la estrategia no generaliza."
+    ),
+    icon="🔬",
 )
 
-tickers_str = st.session_state.get("global_tickers", "KO, PEP")
-tickers = [t.strip().upper() for t in tickers_str.split(",") if t.strip()]
-start = st.session_state.get("global_start")
-end = st.session_state.get("global_end")
+ensure_session_initialized()
+tickers, start, end = get_global_params()
 
 if len(tickers) < 1:
-    st.error("Introduce al menos un ticker en la barra lateral.")
+    callout("Introduce al menos un ticker en la barra lateral.", variant="warning")
     st.stop()
 
 with st.sidebar:
     st.markdown("---")
-    st.subheader("🎛️ Configuración Walk-Forward")
-
+    st.markdown("## 🎛️ Configuración Walk-Forward")
     strategy = st.selectbox(
         "Estrategia",
         ["Pairs Trading (spread)", "Momentum", "Mean Reversion"],
@@ -41,11 +44,10 @@ with st.sidebar:
 
     if strategy == "Pairs Trading (spread)":
         if len(tickers) < 2:
-            st.error("Pairs Trading requiere al menos 2 tickers.")
+            callout("Pairs Trading requiere al menos 2 tickers.", variant="warning")
             st.stop()
         t1 = st.selectbox("Ticker 1", tickers, index=0)
         t2 = st.selectbox("Ticker 2", tickers, index=1)
-
     else:
         t1 = st.selectbox("Ticker", tickers, index=0)
         t2 = None
@@ -67,27 +69,23 @@ if run:
         try:
             prices = load_prices(tickers, start, end)
         except (ValueError, ConnectionError) as e:
-            st.error(f"Error al cargar datos: {e}")
+            callout(f"Error al cargar datos: {e}", variant="danger")
             st.stop()
 
-    # --- Preparar la serie sobre la que se opera ---
     if strategy == "Pairs Trading (spread)":
         try:
             coint = engle_granger(prices[t1], prices[t2])
             series = coint.spread
         except Exception as e:
-            st.error(f"Error calculando cointegración: {e}")
+            callout(f"Error calculando cointegración: {e}", variant="danger")
             st.stop()
         generator = signal_from_pairs_trading(window=60, entry=2.0, exit_=0.5)
-        series_name = f"Spread {t1} - α - β·{t2}"
     elif strategy == "Momentum":
         series = prices[t1]
         generator = signal_from_momentum(window=60)
-        series_name = t1
     else:
         series = prices[t1]
         generator = signal_from_mean_reversion(window=30, entry=1.5, exit_=0.5)
-        series_name = t1
 
     with st.spinner("Ejecutando walk-forward..."):
         try:
@@ -102,13 +100,15 @@ if run:
                 slippage=slippage,
             )
         except ValueError as e:
-            st.error(f"Error en el walk-forward: {e}")
+            callout(f"Error en el walk-forward: {e}", variant="danger")
             st.stop()
 
-    st.success(f"Walk-forward completado: {result.params['n_windows']} ventanas.")
+    callout(
+        f"Walk-forward completado: <strong>{result.params['n_windows']} ventanas</strong>.",
+        variant="success",
+    )
 
-    # --- Comparación IS vs OOS ---
-    st.subheader("📊 Comparación In-Sample vs Out-of-Sample")
+    section("📊 Comparación In-Sample vs Out-of-Sample")
     is_m = result.is_metrics_agg
     oos_m = result.oos_metrics_agg
 
@@ -133,29 +133,29 @@ if run:
 
     st.dataframe(comparison, use_container_width=True)
 
-    # --- Alerta de degradación ---
     is_sharpe = is_m.get("sharpe", np.nan)
     oos_sharpe = oos_m.get("sharpe", np.nan)
     if np.isfinite(is_sharpe) and np.isfinite(oos_sharpe) and is_sharpe != 0:
         degradation = (is_sharpe - oos_sharpe) / abs(is_sharpe)
         if degradation > 0.5:
-            st.error(
+            callout(
                 f"⚠️ Degradación severa: Sharpe cae {degradation:.0%} de IS a OOS. "
-                "Alta sospecha de overfitting."
+                "Alta sospecha de overfitting.",
+                variant="danger",
             )
         elif degradation > 0.25:
-            st.warning(f"Degradación moderada del Sharpe: {degradation:.0%}.")
+            callout(f"Degradación moderada del Sharpe: {degradation:.0%}.",
+                    variant="warning")
         else:
-            st.success(f"Degradación aceptable: {degradation:.0%}.")
+            callout(f"Degradación aceptable: {degradation:.0%}.", variant="success")
 
-    # --- Curva OOS concatenada ---
-    st.subheader("📈 Curva de capital Out-of-Sample (compuesta)")
+    section("📈 Curva de capital Out-of-Sample (compuesta)")
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=result.oos_equity_concat.index,
         y=result.oos_equity_concat.values,
         mode="lines", name="OOS",
-        line=dict(color="#1f77b4", width=2),
+        line={"color": "#2563eb", "width": 2},
     ))
     fig.update_layout(
         yaxis_title="Capital", template="plotly_white", height=400,
@@ -163,8 +163,7 @@ if run:
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # --- Detalle por ventana ---
-    st.subheader("🔍 Detalle por ventana")
+    section("🔍 Detalle por ventana")
     rows = []
     for i, w in enumerate(result.windows):
         rows.append({
@@ -180,7 +179,6 @@ if run:
         })
     st.dataframe(pd.DataFrame(rows), use_container_width=True)
 
-    # --- Descargas ---
     st.download_button(
         "⬇️ Descargar métricas IS/OOS (CSV)",
         comparison.to_csv().encode("utf-8"),
@@ -188,11 +186,14 @@ if run:
     )
 
 else:
-    st.info(
+    callout(
         "Configura los parámetros en la barra lateral y pulsa "
-        "**🚀 Ejecutar walk-forward**.\n\n"
-        "**Recomendaciones:**\n"
-        "- `train_size` >= 2 años (504 barras diarias).\n"
-        "- `test_size` ~ 6 meses (126 barras).\n"
-        "- Step = test_size → ventanas sin solapamiento."
+        "<strong>🚀 Ejecutar walk-forward</strong>.<br><br>"
+        "<strong>Recomendaciones:</strong><br>"
+        "• <code>train_size</code> ≥ 2 años (504 barras diarias).<br>"
+        "• <code>test_size</code> ≈ 6 meses (126 barras).<br>"
+        "• Step = test_size → ventanas sin solapamiento.",
+        variant="info",
     )
+
+footer()
