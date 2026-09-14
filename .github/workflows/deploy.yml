@@ -1,0 +1,27 @@
+name: Deploy to Streamlit Cloud
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "requirements.txt"
+      - ".streamlit/**"
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verificar estructura de despliegue
+        run: |
+          echo "✅ Verificando archivos requeridos para Streamlit Cloud..."
+          test -f app/main.py || (echo "❌ Falta app/main.py" && exit 1)
+          test -f requirements.txt || (echo "❌ Falta requirements.txt" && exit 1)
+          test -f .streamlit/config.toml || (echo "❌ Falta .streamlit/config.toml" && exit 1)
+          echo "✅ Todos los archivos presentes."
+          echo ""
+          echo "Streamlit Cloud detecta cambios automáticamente desde el repo."
+          echo "Configura el despliegue en: https://share.streamlit.io/"
