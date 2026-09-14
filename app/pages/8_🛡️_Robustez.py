@@ -18,27 +18,30 @@ from app.core.walkforward import (
     signal_from_pairs_trading,
     walk_forward_analysis,
 )
+from app.state import ensure_session_initialized, get_global_params
+from app.styles import callout, footer, hero, page_setup, section
 
-st.set_page_config(page_title="Robustez", page_icon="🛡️", layout="wide")
-st.header("🛡️ Análisis de Robustez")
-st.caption(
-    "Comprueba si la estrategia generaliza o es producto del overfitting: "
-    "walk-forward, Monte Carlo, sensibilidad de parámetros y score agregado."
+page_setup("Robustez", "🛡️")
+
+hero(
+    title="Análisis de Robustez",
+    subtitle=(
+        "Comprueba si la estrategia generaliza o es producto del overfitting: "
+        "walk-forward, Monte Carlo, sensibilidad de parámetros y score agregado."
+    ),
+    icon="🛡️",
 )
 
-tickers_str = st.session_state.get("global_tickers", "KO, PEP")
-tickers = [t.strip().upper() for t in tickers_str.split(",") if t.strip()]
-start = st.session_state.get("global_start")
-end = st.session_state.get("global_end")
+ensure_session_initialized()
+tickers, start, end = get_global_params()
 
 if len(tickers) < 1:
-    st.error("Introduce al menos un ticker en la barra lateral.")
+    callout("Introduce al menos un ticker en la barra lateral.", variant="warning")
     st.stop()
 
 with st.sidebar:
     st.markdown("---")
-    st.subheader("🎛️ Configuración Robustez")
-
+    st.markdown("## 🎛️ Configuración Robustez")
     strategy = st.selectbox(
         "Estrategia",
         ["Momentum", "Mean Reversion", "Pairs Trading (spread)"],
@@ -46,7 +49,7 @@ with st.sidebar:
 
     if strategy == "Pairs Trading (spread)":
         if len(tickers) < 2:
-            st.error("Pairs Trading requiere al menos 2 tickers.")
+            callout("Pairs Trading requiere al menos 2 tickers.", variant="warning")
             st.stop()
         t1 = st.selectbox("Ticker 1", tickers, index=0)
         t2 = st.selectbox("Ticker 2", tickers, index=1)
@@ -77,15 +80,16 @@ if run:
         try:
             prices = load_prices(tickers, start, end)
         except (ValueError, ConnectionError) as e:
-            st.error(f"Error al cargar datos: {e}")
+            callout(f"Error al cargar datos: {e}", variant="danger")
             st.stop()
 
+    # --- Preparar serie y factorías ---
     if strategy == "Pairs Trading (spread)":
         try:
             coint = engle_granger(prices[t1], prices[t2])
             series = coint.spread
         except Exception as e:
-            st.error(f"Error calculando cointegración: {e}")
+            callout(f"Error calculando cointegración: {e}", variant="danger")
             st.stop()
 
         def generator_factory(params):
@@ -109,7 +113,7 @@ if run:
 
         def simple_factory(p, params):
             ret = p.pct_change(params["window"])
-            s = pd.Series(0, index=p.index)
+            s = pd.Series(0, index=p.index, dtype=int)
             s[ret > 0] = 1
             s[ret < 0] = -1
             return s
@@ -129,7 +133,7 @@ if run:
             mean = p.rolling(params["window"]).mean().shift(1)
             std = p.rolling(params["window"]).std().shift(1)
             z = (p - mean) / std
-            s = pd.Series(0, index=p.index)
+            s = pd.Series(0, index=p.index, dtype=int)
             pos = 0
             for i, zi in enumerate(z):
                 if np.isnan(zi):
@@ -156,7 +160,7 @@ if run:
                 test_size=test_size,
             )
         except ValueError as e:
-            st.error(f"Error en walk-forward: {e}")
+            callout(f"Error en walk-forward: {e}", variant="danger")
             st.stop()
 
     is_sharpe = wf.is_metrics_agg.get("sharpe", np.nan)
@@ -165,7 +169,7 @@ if run:
 
     oos_returns = wf.oos_equity_concat.pct_change().dropna()
     if len(oos_returns) < 10:
-        st.warning("Pocos retornos OOS para Monte Carlo fiable.")
+        callout("Pocos retornos OOS para Monte Carlo fiable.", variant="warning")
 
     with st.spinner("Ejecutando Monte Carlo..."):
         try:
@@ -176,7 +180,7 @@ if run:
                 metric_name="sharpe",
             )
         except ValueError as e:
-            st.error(f"Error en Monte Carlo: {e}")
+            callout(f"Error en Monte Carlo: {e}", variant="danger")
             st.stop()
 
     with st.spinner("Analizando sensibilidad..."):
@@ -205,12 +209,12 @@ if run:
         n_trades=int(n_trades),
     )
 
-    st.subheader("🎯 Robustness Score")
+    section("🎯 Robustness Score")
     c1, c2 = st.columns([1, 3])
     with c1:
         st.metric("Score final", f"{report.final_score:.1f} / 100")
     with c2:
-        st.info(report.interpretation)
+        callout(report.interpretation, variant="info")
 
     comp_df = pd.DataFrame(
         list(report.components.items()),
@@ -218,9 +222,7 @@ if run:
     ).set_index("Componente")
     st.dataframe(comp_df, use_container_width=True)
 
-    st.markdown("---")
-
-    st.subheader("📊 Walk-Forward (IS vs OOS)")
+    section("📊 Walk-Forward (IS vs OOS)")
     wf_df = pd.DataFrame({
         "In-Sample": [
             f"{wf.is_metrics_agg.get('sharpe', np.nan):.2f}",
@@ -235,11 +237,11 @@ if run:
     }, index=["Sharpe", "Return total", "Max DD"])
     st.dataframe(wf_df, use_container_width=True)
 
-    st.subheader("🎲 Monte Carlo (distribución del Sharpe OOS)")
+    section("🎲 Monte Carlo (distribución del Sharpe OOS)")
     fig = go.Figure()
     fig.add_trace(go.Histogram(
         x=mc.distribution, nbinsx=50,
-        marker_color="#1f77b4", opacity=0.75,
+        marker_color="#2563eb", opacity=0.75,
         name="Sharpe simulado",
     ))
     fig.add_vline(x=mc.mean, line_dash="dash", line_color="green",
@@ -265,7 +267,7 @@ if run:
     prob_positive = float((mc.distribution > 0).mean())
     st.metric("P(Sharpe simulado > 0)", f"{prob_positive:.1%}")
 
-    st.subheader(f"📉 Sensibilidad de `{sens.param_name}`")
+    section(f"📉 Sensibilidad de `{sens.param_name}`")
     fig_s = px.line(
         sens.variations, x="value", y="sharpe",
         markers=True,
@@ -275,13 +277,14 @@ if run:
                     line_color="red", annotation_text="Base")
     fig_s.update_layout(template="plotly_white", height=350)
     st.plotly_chart(fig_s, use_container_width=True)
-    st.caption(
-        f"Score de estabilidad: **{sens.stability_score:.2f}** (1 = muy estable). "
-        "Busca una meseta alrededor del valor base, no un pico aislado."
+    callout(
+        f"Score de estabilidad: <strong>{sens.stability_score:.2f}</strong> "
+        "(1 = muy estable). Busca una meseta alrededor del valor base, "
+        "no un pico aislado.",
+        variant="info",
     )
 
-    st.markdown("---")
-    st.subheader("⬇️ Descargas")
+    section("⬇️ Descargas")
     c1, c2, c3 = st.columns(3)
     with c1:
         st.download_button(
@@ -303,7 +306,10 @@ if run:
         )
 
 else:
-    st.info(
+    callout(
         "Configura la estrategia y los parámetros en la barra lateral y pulsa "
-        "**🚀 Analizar robustez**."
+        "<strong>🚀 Analizar robustez</strong>.",
+        variant="info",
     )
+
+footer()
