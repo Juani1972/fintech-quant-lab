@@ -13,22 +13,33 @@ from app.core.cointegration import (
 from app.core.data_loader import load_prices
 from app.core.multiple_testing import correct_pvalues
 from app.core.plotting import line_chart, zscore_chart
+from app.state import ensure_session_initialized, get_global_params
+from app.styles import callout, footer, hero, page_setup, section
 
-st.set_page_config(page_title="Cointegración", page_icon="🔗", layout="wide")
-st.header("🔗 Cointegración y Pairs Trading")
+page_setup("Cointegración", "🔗")
 
-tickers_str = st.session_state.get("global_tickers", "KO, PEP")
-tickers = [t.strip().upper() for t in tickers_str.split(",") if t.strip()]
-start = st.session_state.get("global_start")
-end = st.session_state.get("global_end")
+hero(
+    title="Cointegración y Pairs Trading",
+    subtitle=(
+        "Engle-Granger, ADF del spread, half-life y z-score causal. "
+        "Corrección por múltiples tests (Bonferroni y Benjamini-Hochberg)."
+    ),
+    icon="🔗",
+)
+
+ensure_session_initialized()
+tickers, start, end = get_global_params()
 
 if len(tickers) < 2:
-    st.error("Esta página requiere al menos 2 tickers. Añádelos en la barra lateral.")
+    callout(
+        "Esta página requiere al menos 2 tickers. Añádelos en la barra lateral.",
+        variant="warning",
+    )
     st.stop()
 
 with st.sidebar:
     st.markdown("---")
-    st.subheader("🎛️ Parámetros Pairs Trading")
+    st.markdown("## 🎛️ Parámetros Pairs Trading")
     col1, col2 = st.columns(2)
     t1 = col1.selectbox("Ticker 1", tickers, index=0)
     t2 = col2.selectbox("Ticker 2", tickers, index=1)
@@ -37,22 +48,17 @@ with st.sidebar:
     run = st.button("🚀 Ejecutar análisis", type="primary", use_container_width=True)
 
 
-# ============================================================
-#  Análisis de pares seleccionados + corrección por múltiples tests
-# ============================================================
 if run:
     with st.spinner("Descargando datos..."):
         try:
             prices = load_prices(tickers, start, end)
         except (ValueError, ConnectionError) as e:
-            st.error(f"Error al cargar datos: {e}")
+            callout(f"Error al cargar datos: {e}", variant="danger")
             st.stop()
 
-    # --------------------------------------------------------
-    #  Test de todos los pares posibles (multiple testing)
-    # --------------------------------------------------------
+    # --- Multiple testing sobre todos los pares ---
     if len(tickers) > 2:
-        st.subheader("🧪 Todos los pares (con corrección por múltiples tests)")
+        section("🧪 Todos los pares (con corrección por múltiples tests)")
         pairs = list(combinations(tickers, 2))
         rows = []
         pvals = []
@@ -89,17 +95,16 @@ if run:
                 }),
                 use_container_width=True,
             )
-            st.caption(
-                f"Se han realizado **{len(df_pairs)} tests**. "
-                f"Rechazos brutos (p<0.05): **{(pv_series < 0.05).sum()}**. "
-                f"Tras Bonferroni: **{bonf.n_rejected}**. "
-                f"Tras BH (FDR): **{bh.n_rejected}**."
+            callout(
+                f"Se han realizado <strong>{len(df_pairs)} tests</strong>. "
+                f"Rechazos brutos (p&lt;0.05): <strong>{(pv_series < 0.05).sum()}</strong>. "
+                f"Tras Bonferroni: <strong>{bonf.n_rejected}</strong>. "
+                f"Tras BH (FDR): <strong>{bh.n_rejected}</strong>.",
+                variant="info",
             )
 
-    # --------------------------------------------------------
-    #  Análisis en detalle del par seleccionado
-    # --------------------------------------------------------
-    st.subheader(f"📌 Detalle del par {t1} / {t2}")
+    # --- Detalle del par seleccionado ---
+    section(f"📌 Detalle del par {t1} / {t2}")
     result = engle_granger(prices[t1], prices[t2])
 
     c1, c2, c3, c4 = st.columns(4)
@@ -110,18 +115,20 @@ if run:
 
     st.markdown(f"**Spread:** `{t1} - {result.alpha:.4f} - {result.beta:.4f} · {t2}`")
 
-    st.subheader("Test ADF del spread")
+    section("Test ADF del spread")
     st.write(f"**Estadístico:** {result.adf_spread_stat:.4f}")
     st.write(f"**p-valor:** {result.adf_spread_pvalue:.4f}")
     st.write("**Valores críticos:**")
     st.json(result.adf_spread_crit)
 
     if result.adf_spread_pvalue < 0.05:
-        st.success("El spread es estacionario (ADF p < 0.05). Apto para pairs trading.")
+        callout("El spread es estacionario (ADF p < 0.05). Apto para pairs trading.",
+                variant="success")
     else:
-        st.warning("El spread NO es estacionario según ADF. Cuidado con el pairs trading.")
+        callout("El spread NO es estacionario según ADF. Cuidado con el pairs trading.",
+                variant="warning")
 
-    st.subheader("Spread")
+    section("Spread")
     st.plotly_chart(
         line_chart(result.spread, f"Spread {t1} - α - β·{t2}"),
         use_container_width=True,
@@ -129,15 +136,17 @@ if run:
 
     hl = half_life(result.spread)
     if hl != float("inf"):
-        st.info(f"⏱️ Half-life de reversión: **{hl:.1f} días**")
+        callout(f"⏱️ Half-life de reversión: <strong>{hl:.1f} días</strong>",
+                variant="info")
     else:
-        st.warning("Half-life no definida (el spread no revierte a la media).")
+        callout("Half-life no definida (el spread no revierte a la media).",
+                variant="warning")
 
-    st.subheader(f"Z-score (ventana={window})")
+    section(f"Z-score (ventana={window})")
     z = rolling_zscore(result.spread, window)
     st.plotly_chart(zscore_chart(z, entry=entry), use_container_width=True)
 
-    st.subheader("Señales de trading")
+    section("Señales de trading")
     signals = generate_signals(z, entry=entry)
     st.plotly_chart(
         line_chart(signals, "Señales (1=long, -1=short, 0=neutral)"),
@@ -149,3 +158,12 @@ if run:
         signals.to_csv().encode("utf-8"),
         file_name=f"signals_{t1}_{t2}.csv",
     )
+
+else:
+    callout(
+        "Configura el par y los parámetros en la barra lateral y pulsa "
+        "<strong>🚀 Ejecutar análisis</strong>.",
+        variant="info",
+    )
+
+footer() 
