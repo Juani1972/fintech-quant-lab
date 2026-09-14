@@ -9,9 +9,9 @@ from app.core.garch import (
     residual_diagnostics,
 )
 from app.core.plotting import line_chart
+from app.state import ensure_session_initialized, get_global_params
 from app.styles import callout, footer, hero, page_setup, section
 
-# --- Setup común ---
 page_setup("GARCH", "📈")
 
 hero(
@@ -23,17 +23,13 @@ hero(
     icon="📈",
 )
 
-# --- Leer parámetros globales ---
-tickers_str = st.session_state.get("global_tickers", "KO, PEP")
-tickers = [t.strip().upper() for t in tickers_str.split(",") if t.strip()]
-start = st.session_state.get("global_start")
-end = st.session_state.get("global_end")
+ensure_session_initialized()
+tickers, start, end = get_global_params()
 
 if not tickers:
     callout("Introduce al menos un ticker en la barra lateral.", variant="warning")
     st.stop()
 
-# --- Sidebar específico ---
 with st.sidebar:
     st.markdown("---")
     st.markdown("## 🎛️ Parámetros GARCH")
@@ -44,7 +40,7 @@ with st.sidebar:
     dist = st.selectbox("Distribución", ["normal", "t", "skewt", "ged"])
     run = st.button("🚀 Ejecutar GARCH", type="primary", use_container_width=True)
 
-# --- Ejecución ---
+
 if run:
     with st.spinner("Descargando datos..."):
         try:
@@ -62,7 +58,6 @@ if run:
             callout(f"Error ajustando GARCH: {e}", variant="danger")
             st.stop()
 
-    # --- KPIs ---
     section("📊 Resultado del ajuste")
     c1, c2, c3 = st.columns(3)
     c1.metric("AIC", f"{result.aic:.2f}")
@@ -72,7 +67,6 @@ if run:
         "✅ Sí" if check_stationarity(result.params, result.model_type) else "❌ No",
     )
 
-    # --- Diagnósticos ---
     section("🧪 Diagnósticos de residuos")
     try:
         diag = residual_diagnostics(result, lags=10)
@@ -95,7 +89,6 @@ if run:
     except Exception as e:
         callout(f"No se pudieron calcular diagnósticos: {e}", variant="info")
 
-    # --- Gráficos ---
     section("📈 Volatilidad condicional")
     st.plotly_chart(
         line_chart(
@@ -112,16 +105,13 @@ if run:
         use_container_width=True,
     )
 
-    # --- Detalle ---
     with st.expander("📋 Resumen completo del modelo"):
         st.text(result.model_result.summary().as_text())
 
-    # --- Descarga ---
     st.download_button(
         "⬇️ Descargar parámetros (CSV)",
         result.params.to_csv().encode("utf-8"),
         file_name=f"garch_params_{ticker}.csv",
-        use_container_width=False,
     )
 
 else:
