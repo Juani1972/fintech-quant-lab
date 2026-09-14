@@ -30,19 +30,7 @@ def fit_garch(
     dist: str = "normal",
     rescale: bool = True,
 ) -> GarchResult:
-    """Ajusta un modelo GARCH a una serie de retornos.
-
-    Args:
-        returns: Serie de retornos (en % idealmente).
-        p: Orden ARCH.
-        q: Orden GARCH.
-        vol: Tipo de modelo ('Garch', 'EGARCH', 'GJR-GARCH').
-        dist: Distribución de errores ('normal', 't', 'skewt', 'ged').
-        rescale: Si True, multiplica por 100 para estabilidad numérica.
-
-    Returns:
-        GarchResult con el modelo ajustado y métricas.
-    """
+    """Ajusta un modelo GARCH a una serie de retornos."""
     series = returns.dropna().copy()
     if rescale:
         series = series * 100
@@ -65,53 +53,40 @@ def fit_garch(
 def check_stationarity(params: pd.Series, model_type: str = "Garch") -> bool:
     """Comprueba la condición de estacionariedad según el tipo de modelo.
 
-    Condiciones:
-        - GARCH(p,q):     sum(alpha) + sum(beta) < 1
-        - GJR-GARCH:      sum(alpha) + sum(beta) + sum(gamma)/2 < 1
-        - EGARCH:         |beta| < 1
-
-    Args:
-        params: Parámetros del modelo ajustado (Series con nombres tipo 'alpha[1]').
-        model_type: 'Garch', 'GJR-GARCH' o 'EGARCH'.
-
     Returns:
-        True si el modelo es estacionario en covarianza.
+        `bool` nativo de Python (no `np.bool_`), para que los tests
+        puedan usar `is True` sin sorpresas.
 
     Raises:
         ValueError: Si el modelo no es reconocido.
     """
     model_type_norm = model_type.upper().replace("-", "").replace("_", "")
 
-    if model_type_norm in ("GARCH",):
+    if model_type_norm == "GARCH":
         alpha = params.filter(like="alpha").sum()
         beta = params.filter(like="beta").sum()
-        return (alpha + beta) < 1.0
+        return bool((alpha + beta) < 1.0)
 
     if model_type_norm in ("GJRGARCH", "GJR"):
         alpha = params.filter(like="alpha").sum()
         beta = params.filter(like="beta").sum()
         gamma = params.filter(like="gamma").sum()
-        return (alpha + beta + gamma / 2) < 1.0
+        return bool((alpha + beta + gamma / 2) < 1.0)
 
-    if model_type_norm in ("EGARCH",):
+    if model_type_norm == "EGARCH":
         beta = params.filter(like="beta").sum()
-        return abs(beta) < 1.0
+        return bool(abs(beta) < 1.0)
 
     raise ValueError(f"Modelo '{model_type}' no reconocido para test de estacionariedad.")
 
 
 def is_stationary(params: pd.Series, model_type: str = "Garch") -> bool:
-    """Alias deprecado. Usa `check_stationarity(params, model_type)`."""
+    """Alias de `check_stationarity`. Devuelve `bool` nativo."""
     return check_stationarity(params, model_type)
 
 
 def residual_diagnostics(result: GarchResult, lags: int = 10) -> dict[str, float]:
-    """Diagnósticos de residuos estandarizados del modelo GARCH.
-
-    Returns:
-        Dict con p-valores de Ljung-Box (residuos y residuos²), ARCH-LM
-        y Jarque-Bera.
-    """
+    """Diagnósticos de residuos estandarizados."""
     from statsmodels.stats.diagnostic import acorr_ljungbox, het_arch
     from scipy.stats import jarque_bera
 
@@ -120,7 +95,7 @@ def residual_diagnostics(result: GarchResult, lags: int = 10) -> dict[str, float
     lb = acorr_ljungbox(resid, lags=[lags], return_df=True)
     lb2 = acorr_ljungbox(resid ** 2, lags=[lags], return_df=True)
     arch_test = het_arch(resid, nlags=lags)
-    jb_stat, jb_pval = jarque_bera(resid)
+    _, jb_pval = jarque_bera(resid)
 
     return {
         "ljung_box_pvalue": float(lb["lb_pvalue"].iloc[0]),
