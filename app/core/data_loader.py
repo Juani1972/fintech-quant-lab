@@ -45,3 +45,10 @@ def load_prices(
 def compute_log_returns(prices: pd.DataFrame) -> pd.DataFrame:
     """Calcula retornos logarítmicos."""
     return (prices / prices.shift(1)).apply(lambda x: x).pipe(lambda df: df.apply(lambda s: s))
+
+import numpy as np
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def compute_log_returns(prices: pd.DataFrame) -> pd.DataFrame:
+    """Calcula retornos logarítmicos."""
+    return np.log(prices / prices.shift(1)).dropna()
