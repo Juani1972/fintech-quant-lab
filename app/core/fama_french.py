@@ -1,4 +1,4 @@
-"""Regresiones Fama-French con descarga de factores de Kenneth French."""
+"""Regresiones Fama-French con descarga de factores y errores HAC."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -9,23 +9,30 @@ import pandas_datareader.data as web
 import statsmodels.api as sm
 
 
-@dataclass
-class FamaFrenchResult:
-    """Resultado de la regresión Fama-French."""
-    alpha: float
-    alpha_pvalue: float
-    betas: pd.Series
-    betas_pvalues: pd.Series
-    r_squared: float
-    adj_r_squared: float
-    n_obs: int
-    summary: str
-
-
 FACTOR_COLS = {
     "3": ["Mkt-RF", "SMB", "HML"],
     "5": ["Mkt-RF", "SMB", "HML", "RMW", "CMA"],
 }
+
+
+@dataclass
+class FamaFrenchResult:
+    """Resultado de la regresión Fama-French.
+
+    Todos los p-values son robustos (HAC / Newey-West) por defecto.
+    """
+    alpha: float
+    alpha_pvalue: float
+    alpha_tstat: float
+    betas: pd.Series
+    betas_pvalues: pd.Series
+    betas_tstats: pd.Series
+    r_squared: float
+    adj_r_squared: float
+    n_obs: int
+    cov_type: str
+    maxlags: int | None
+    summary: str
 
 
 def load_factors(start: date, end: date, model: str = "3") -> pd.DataFrame:
@@ -37,7 +44,7 @@ def load_factors(start: date, end: date, model: str = "3") -> pd.DataFrame:
         model: '3' o '5' factores.
 
     Returns:
-        DataFrame con factores en formato decimal (no porcentaje), indexado por fecha.
+        DataFrame con factores en decimal, indexado por fecha.
 
     Raises:
         ValueError: Si el modelo no es '3' ni '5'.
@@ -57,7 +64,10 @@ def load_factors(start: date, end: date, model: str = "3") -> pd.DataFrame:
     except Exception as e:
         raise ConnectionError(f"No se pudieron descargar los factores: {e}") from e
 
-    ff = raw / 100  # convertir de % a decimal
+    if raw is None or raw.empty:
+        raise ValueError(f"Sin datos de factores entre {start} y {end}.")
+
+    ff = raw / 100
     ff.index = pd.to_datetime(ff.index)
     return ff
 
@@ -67,6 +77,8 @@ def run_regression(
     factors: pd.DataFrame,
     model: str = "3",
     risk_free: str = "RF",
+    cov_type: str = "HAC",
+    maxlags: int | None = None,
 ) -> FamaFrenchResult:
     """Ejecuta la regresión de factores sobre los retornos en exceso.
 
@@ -77,9 +89,15 @@ def run_regression(
         factors: DataFrame de factores (salida de load_factors).
         model: '3' o '5'.
         risk_free: Nombre de la columna de tasa libre de riesgo.
+        cov_type: Tipo de covarianza:
+            - 'HAC': Newey-West (robusto a heterocedasticidad y autocorrelación).
+            - 'HC0', 'HC1', 'HC2', 'HC3': White y variantes (solo heterocedasticidad).
+            - 'nonrobust': OLS estándar.
+        maxlags: Número de lags para HAC. Si None, se calcula automáticamente
+            como int(4 * (n/100)^(2/9)), recomendación de Newey-West.
 
     Returns:
-        FamaFrenchResult con alpha, betas y métricas.
+        FamaFrenchResult con p-values robustos.
     """
     if model not in FACTOR_COLS:
         raise ValueError(f"Modelo '{model}' no soportado.")
@@ -94,15 +112,31 @@ def run_regression(
 
     X = sm.add_constant(df[factor_cols])
     y = df["excess"]
-    fit = sm.OLS(y, X).fit()
+
+    n = len(df)
+    if cov_type == "HAC":
+        if maxlags is None:
+            maxlags = int(4 * (n / 100) ** (2 / 9))
+        fit = sm.OLS(y, X).fit(
+            cov_type="HAC",
+            cov_kwds={"maxlags": maxlags},
+        )
+    elif cov_type == "nonrobust":
+        fit = sm.OLS(y, X).fit()
+    else:
+        fit = sm.OLS(y, X).fit(cov_type=cov_type)
 
     return FamaFrenchResult(
-        alpha=fit.params["const"],
-        alpha_pvalue=fit.pvalues["const"],
+        alpha=float(fit.params["const"]),
+        alpha_pvalue=float(fit.pvalues["const"]),
+        alpha_tstat=float(fit.tvalues["const"]),
         betas=fit.params[factor_cols],
         betas_pvalues=fit.pvalues[factor_cols],
-        r_squared=fit.rsquared,
-        adj_r_squared=fit.rsquared_adj,
+        betas_tstats=fit.tvalues[factor_cols],
+        r_squared=float(fit.rsquared),
+        adj_r_squared=float(fit.rsquared_adj),
         n_obs=int(fit.nobs),
+        cov_type=cov_type,
+        maxlags=maxlags,
         summary=fit.summary().as_text(),
     )
