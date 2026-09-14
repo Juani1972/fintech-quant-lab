@@ -100,7 +100,6 @@ def check_stationarity(params: pd.Series, model_type: str = "Garch") -> bool:
     raise ValueError(f"Modelo '{model_type}' no reconocido para test de estacionariedad.")
 
 
-# Alias por compatibilidad (por defecto asume GARCH)
 def is_stationary(params: pd.Series, model_type: str = "Garch") -> bool:
     """Alias deprecado. Usa `check_stationarity(params, model_type)`."""
     return check_stationarity(params, model_type)
