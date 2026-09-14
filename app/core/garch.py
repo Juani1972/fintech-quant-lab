@@ -2,11 +2,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal, cast
 
 import numpy as np
 import pandas as pd
 from arch import arch_model
 from arch.univariate.base import ARCHModelResult
+
+
+VolType = Literal["Garch", "EGARCH", "GJR-GARCH"]
+DistType = Literal["normal", "t", "skewt", "ged"]
 
 
 @dataclass
@@ -30,12 +35,30 @@ def fit_garch(
     dist: str = "normal",
     rescale: bool = True,
 ) -> GarchResult:
-    """Ajusta un modelo GARCH a una serie de retornos."""
+    """Ajusta un modelo GARCH a una serie de retornos.
+
+    Args:
+        returns: Serie de retornos (en % idealmente).
+        p: Orden ARCH.
+        q: Orden GARCH.
+        vol: Tipo de modelo ('Garch', 'EGARCH', 'GJR-GARCH').
+        dist: Distribución de errores ('normal', 't', 'skewt', 'ged').
+        rescale: Si True, multiplica por 100 para estabilidad numérica.
+
+    Returns:
+        GarchResult con el modelo ajustado y métricas.
+    """
     series = returns.dropna().copy()
     if rescale:
         series = series * 100
 
-    model = arch_model(series, vol=vol, p=p, q=q, dist=dist)
+    model = arch_model(
+        series,
+        vol=cast(VolType, vol),
+        p=p,
+        q=q,
+        dist=cast(DistType, dist),
+    )
     res = model.fit(disp="off")
 
     return GarchResult(
@@ -44,8 +67,8 @@ def fit_garch(
         standardized_residuals=res.resid / res.conditional_volatility,
         params=res.params,
         pvalues=res.pvalues,
-        aic=res.aic,
-        bic=res.bic,
+        aic=float(res.aic),
+        bic=float(res.bic),
         model_type=vol,
     )
 
@@ -54,8 +77,7 @@ def check_stationarity(params: pd.Series, model_type: str = "Garch") -> bool:
     """Comprueba la condición de estacionariedad según el tipo de modelo.
 
     Returns:
-        `bool` nativo de Python (no `np.bool_`), para que los tests
-        puedan usar `is True` sin sorpresas.
+        `bool` nativo de Python.
 
     Raises:
         ValueError: Si el modelo no es reconocido.
@@ -87,8 +109,8 @@ def is_stationary(params: pd.Series, model_type: str = "Garch") -> bool:
 
 def residual_diagnostics(result: GarchResult, lags: int = 10) -> dict[str, float]:
     """Diagnósticos de residuos estandarizados."""
-    from statsmodels.stats.diagnostic import acorr_ljungbox, het_arch
     from scipy.stats import jarque_bera
+    from statsmodels.stats.diagnostic import acorr_ljungbox, het_arch
 
     resid = result.standardized_residuals.dropna()
 
