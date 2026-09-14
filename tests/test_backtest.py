@@ -177,13 +177,18 @@ def test_trades_extracted(prices_up):
 
 
 def test_trade_pnl_correct(prices_up):
-    """Con long durante 3 días al 1% diario, el PnL debe ser ~3%."""
+    """Con long durante 4 barras al 1% diario, el PnL debe ser 1.01^4 - 1."""
     signals = pd.Series([1, 1, 1, 1, 0, 0, 0, 0, 0, 0], index=prices_up.index, dtype=float)
     result = run_backtest(prices_up, signals, commission=0, slippage=0)
+
     assert result.metrics["n_trades"] == 1
-    # El trade va desde t=1 (ejecución) hasta t=4 (señal de salida ejecutada en t=5)
     trade = result.trades.iloc[0]
-    assert trade["pnl_pct"] == pytest.approx(0.01 ** 3, rel=1e-3) or trade["pnl_pct"] > 0
+
+    # Entry en t=1 (precio 101), exit en t=5 (precio 105.101)
+    # Retención: 4 barras al 1% → 1.01^4 - 1
+    expected_pnl = 1.01 ** 4 - 1
+    assert trade["pnl_pct"] == pytest.approx(expected_pnl, rel=1e-6)
+    assert trade["direction"] == "long"
 
 
 # ============================================================
