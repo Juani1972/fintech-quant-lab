@@ -7,6 +7,7 @@ from datetime import date
 import pandas as pd
 import pandas_datareader.data as web
 import statsmodels.api as sm
+import streamlit as st
 
 
 FACTOR_COLS = {
@@ -14,7 +15,6 @@ FACTOR_COLS = {
     "5": ["Mkt-RF", "SMB", "HML", "RMW", "CMA"],
 }
 
-# Datasets DIARIOS del data library de Kenneth French
 DATASETS = {
     "3": "F-F_Research_Data_Factors_daily",
     "5": "F-F_Research_Data_5_Factors_2x3_daily",
@@ -38,6 +38,7 @@ class FamaFrenchResult:
     summary: str
 
 
+@st.cache_data(ttl=86400, show_spinner=False)
 def load_factors(
     start: date,
     end: date,
@@ -46,13 +47,13 @@ def load_factors(
 ) -> pd.DataFrame:
     """Descarga los factores Fama-French del data library de Kenneth French.
 
+    Cacheado 24 h (los factores se actualizan a lo sumo diariamente).
+
     Args:
         start: Fecha de inicio.
         end: Fecha de fin.
         model: '3' o '5' factores.
-        frequency: 'daily' o 'monthly'. **Importante**: si tus retornos son
-            diarios, usa 'daily' para evitar perder la mayoría de observaciones
-            al hacer dropna.
+        frequency: 'daily' o 'monthly'.
 
     Returns:
         DataFrame con factores en decimal, indexado por fecha.
@@ -73,7 +74,7 @@ def load_factors(
             else "F-F_Research_Data_5_Factors_2x3"
         )
     else:
-        raise ValueError(f"Frecuencia '{frequency}' no soportada. Usa 'daily' o 'monthly'.")
+        raise ValueError(f"Frecuencia '{frequency}' no soportada.")
 
     try:
         raw = web.DataReader(dataset, "famafrench", start=start, end=end)[0]
@@ -101,19 +102,15 @@ def run_regression(
     Modelo: R_i - R_f = alpha + sum(beta_k * Factor_k) + epsilon
 
     Args:
-        returns: Serie de retornos del activo (debe estar en la MISMA
-            frecuencia que `factors`).
+        returns: Serie de retornos del activo (MISMA frecuencia que factors).
         factors: DataFrame de factores (salida de load_factors).
         model: '3' o '5'.
         risk_free: Nombre de la columna de tasa libre de riesgo.
-        cov_type: 'HAC' (Newey-West), 'HC3', 'nonrobust'.
+        cov_type: 'HAC', 'HC3', 'nonrobust'.
         maxlags: Nº de lags para HAC. None → regla automática.
 
     Returns:
         FamaFrenchResult con p-values robustos.
-
-    Raises:
-        ValueError: Si no hay datos superpuestos suficientes.
     """
     if model not in FACTOR_COLS:
         raise ValueError(f"Modelo '{model}' no soportado.")
@@ -139,10 +136,7 @@ def run_regression(
     if cov_type == "HAC":
         if maxlags is None:
             maxlags = int(4 * (n / 100) ** (2 / 9))
-        fit = sm.OLS(y, X).fit(
-            cov_type="HAC",
-            cov_kwds={"maxlags": maxlags},
-        )
+        fit = sm.OLS(y, X).fit(cov_type="HAC", cov_kwds={"maxlags": maxlags})
     elif cov_type == "nonrobust":
         fit = sm.OLS(y, X).fit()
     else:
