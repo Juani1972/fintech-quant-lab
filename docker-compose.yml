@@ -1,0 +1,13 @@
+version: "3.9"
+
+services:
+  fintech-quant-lab:
+    build: .
+    container_name: fintech-quant-lab
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
