@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Iterable
 
+import numpy as np
 import pandas as pd
 import streamlit as st
 import yfinance as yf
@@ -26,29 +27,47 @@ def load_prices(
 
     Returns:
         DataFrame con precios, indexado por fecha.
+
+    Raises:
+        ValueError: Si no hay tickers, fechas inválidas o no hay datos.
     """
     tickers = [t.strip().upper() for t in tickers if t.strip()]
     if not tickers:
         raise ValueError("Debes proporcionar al menos un ticker.")
 
-    raw = yf.download(tickers, start=start, end=end, progress=False, auto_adjust=False)
+    if start >= end:
+        raise ValueError(f"Fecha inicio ({start}) debe ser anterior a fecha fin ({end}).")
+
+    try:
+        raw = yf.download(
+            tickers, start=start, end=end, progress=False, auto_adjust=False
+        )
+    except Exception as e:
+        raise ConnectionError(f"Error descargando datos de yfinance: {e}") from e
+
+    if raw is None or raw.empty:
+        raise ValueError(
+            f"No se obtuvieron datos para {tickers} entre {start} y {end}. "
+            "Revisa los tickers y el rango de fechas."
+        )
 
     if isinstance(raw.columns, pd.MultiIndex):
+        if field not in raw.columns.get_level_values(0):
+            raise ValueError(f"Campo '{field}' no disponible en los datos.")
         data = raw[field]
     else:
+        if field not in raw.columns:
+            raise ValueError(f"Campo '{field}' no disponible en los datos.")
         data = raw[[field]].rename(columns={field: tickers[0]})
 
-    return data.dropna(how="all").ffill().dropna()
+    data = data.dropna(how="all").ffill().dropna()
+    if data.empty:
+        raise ValueError("Tras limpiar NaNs no quedan datos válidos.")
+
+    return data
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def compute_log_returns(prices: pd.DataFrame) -> pd.DataFrame:
-    """Calcula retornos logarítmicos."""
-    return (prices / prices.shift(1)).apply(lambda x: x).pipe(lambda df: df.apply(lambda s: s))
-
-import numpy as np
-
-@st.cache_data(ttl=3600, show_spinner=False)
-def compute_log_returns(prices: pd.DataFrame) -> pd.DataFrame:
-    """Calcula retornos logarítmicos."""
+    """Calcula retornos logarítmicos: r_t = ln(P_t / P_{t-1})."""
     return np.log(prices / prices.shift(1)).dropna()
