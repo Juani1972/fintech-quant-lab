@@ -70,3 +70,39 @@ def test_data_loader_first_char():
     assert first_bytes[:3] == b'"""', (
         f"data_loader.py no empieza con triple comilla: {first_bytes[:3]!r}"
     )
+
+
+def test_no_duplicate_pages():
+    """Regresión: cada número de página (1-8) debe tener exactamente UN
+    archivo en app/pages/.
+
+    Subir archivos con nombres que llevan emoji desde algunos gestores
+    de archivos móviles puede corromper la codificación del nombre
+    (mojibake) sin tocar el contenido, dejando un archivo NUEVO en vez
+    de sobrescribir el existente. Streamlit renderiza todo archivo de
+    app/pages/, así que el resultado es una página duplicada (una
+    versión desactualizada conviviendo con la correcta) sin que ningún
+    error de sintaxis o de import lo detecte — este test comprueba el
+    recuento por número de prefijo, no solo que cada archivo compile.
+    """
+    pages_dir = Path(__file__).parent.parent / "app" / "pages"
+    if not pages_dir.is_dir():
+        pytest.skip("No hay carpeta app/pages")
+
+    prefixes: dict[str, list[str]] = {}
+    for py in sorted(pages_dir.glob("*.py")):
+        if py.name.startswith("_"):
+            continue
+        prefix = py.name.split("_", 1)[0]
+        prefixes.setdefault(prefix, []).append(py.name)
+
+    duplicates = {p: names for p, names in prefixes.items() if len(names) > 1}
+    assert not duplicates, (
+        f"Hay páginas duplicadas por número de prefijo: {duplicates}. "
+        "Probablemente un archivo con nombre corrupto (mojibake) "
+        "convive con el archivo correcto — borra el que no tenga el "
+        "emoji legible en el nombre."
+    )
+    assert len(prefixes) == 8, (
+        f"Se esperaban 8 páginas (1-8), hay {len(prefixes)}: {sorted(prefixes)}"
+    )
