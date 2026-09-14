@@ -41,6 +41,8 @@ with st.sidebar:
         ["Momentum", "Mean Reversion", "Pairs Trading (spread)"],
     )
 
+    t2: str | None
+
     if strategy == "Pairs Trading (spread)":
         if len(tickers) < 2:
             callout("Pairs Trading requiere al menos 2 tickers.", variant="warning")
@@ -87,6 +89,7 @@ if run:
             st.stop()
 
     if strategy == "Pairs Trading (spread)":
+        assert entries is not None, "entries solo es None cuando strategy == 'Momentum'"
         try:
             coint = engle_granger(prices[t1], prices[t2])
             series = coint.spread
@@ -100,7 +103,7 @@ if run:
                 entry=params["entry"],
                 exit_=0.5,
             )
-        param_grid = {"window": windows, "entry": entries}
+        param_grid: dict[str, list] = {"window": windows, "entry": entries}
     elif strategy == "Momentum":
         series = prices[t1]
 
@@ -108,6 +111,7 @@ if run:
             return signal_from_momentum(window=params["window"])
         param_grid = {"window": windows}
     else:
+        assert entries is not None, "entries solo es None cuando strategy == 'Momentum'"
         series = prices[t1]
 
         def factory(params):
