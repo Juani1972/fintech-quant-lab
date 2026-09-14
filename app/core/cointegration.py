@@ -13,6 +13,7 @@ from statsmodels.tsa.stattools import adfuller, coint
 class CointegrationResult:
     """Resultado del test de cointegración y spread."""
     pvalue: float
+    alpha: float
     beta: float
     spread: pd.Series
     adf_pvalue_1: float
@@ -28,23 +29,33 @@ def adf_test(series: pd.Series) -> float:
 def engle_granger(y: pd.Series, x: pd.Series, trend: str = "c") -> CointegrationResult:
     """Ejecuta el test de Engle-Granger y construye el spread.
 
+    Modelo: y_t = alpha + beta * x_t + u_t
+    Spread: u_t = y_t - alpha - beta * x_t
+
     Args:
         y: Serie dependiente (precio).
         x: Serie independiente (precio).
         trend: 'c' constante, 'ct' constante+tendencia, 'n' ninguna.
 
     Returns:
-        CointegrationResult.
+        CointegrationResult con alpha, beta y spread correctamente centrado.
     """
     df = pd.concat([y, x], axis=1).dropna()
     y_, x_ = df.iloc[:, 0], df.iloc[:, 1]
 
     score, pvalue, _ = coint(y_, x_, trend=trend)
-    beta = sm.OLS(y_, sm.add_constant(x_)).fit().params.iloc[1]
-    spread = y_ - beta * x_
+
+    # Regresión con constante para obtener alpha y beta
+    fit = sm.OLS(y_, sm.add_constant(x_)).fit()
+    alpha = fit.params.iloc[0]
+    beta = fit.params.iloc[1]
+
+    # Spread correcto: incluye alpha
+    spread = y_ - alpha - beta * x_
 
     return CointegrationResult(
         pvalue=pvalue,
+        alpha=alpha,
         beta=beta,
         spread=spread,
         adf_pvalue_1=adf_test(y_),
@@ -53,10 +64,27 @@ def engle_granger(y: pd.Series, x: pd.Series, trend: str = "c") -> Cointegration
     )
 
 
-def rolling_zscore(spread: pd.Series, window: int = 60) -> pd.Series:
-    """Calcula el z-score rodante del spread."""
+def rolling_zscore(
+    spread: pd.Series,
+    window: int = 60,
+    shift: int = 1,
+) -> pd.Series:
+    """Calcula el z-score rodante del spread.
+
+    Args:
+        spread: Serie del spread.
+        window: Ventana de cálculo.
+        shift: Si > 0, desplaza la media y std para usar solo información
+            disponible ANTES de la observación actual (evita look-ahead
+            en la generación de señales).
+    """
     mean = spread.rolling(window).mean()
     std = spread.rolling(window).std()
+
+    if shift > 0:
+        mean = mean.shift(shift)
+        std = std.shift(shift)
+
     return (spread - mean) / std
 
 
