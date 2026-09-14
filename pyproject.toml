@@ -1,5 +1,118 @@
+[project]
+name = "fintech-quant-lab"
+version = "0.3.0"
+description = "Plataforma de análisis cuantitativo de series temporales financieras"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Juan Orozco", email = "juani1972@users.noreply.github.com" }
+]
+keywords = ["finance", "quant", "garch", "cointegration", "backtesting", "walk-forward", "streamlit"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Office/Business :: Financial :: Investment",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
+
+dependencies = [
+    "streamlit>=1.30.0",
+    "yfinance>=0.2.40",
+    "pandas>=2.1.0",
+    "numpy>=1.26.0",
+    "scipy>=1.11.0",
+    "statsmodels>=0.14.0",
+    "arch>=6.3.0",
+    "pandas-datareader>=0.10.0",
+    "matplotlib>=3.8.0",
+    "plotly>=5.18.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.4.0",
+    "mypy>=1.10.0",
+    "jupytext>=1.16.0",
+    "jupyter>=1.0.0",
+    "nbformat>=5.10.0",
+    "ipykernel>=6.29.0",
+]
+
 [project.urls]
 Homepage = "https://github.com/Juani1972/fintech-quant-lab"
 Repository = "https://github.com/Juani1972/fintech-quant-lab.git"
 Issues = "https://github.com/Juani1972/fintech-quant-lab/issues"
 Changelog = "https://github.com/Juani1972/fintech-quant-lab/blob/main/CHANGELOG.md"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["app", "app.core"]
+
+# ============================================================
+#  pytest
+# ============================================================
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+addopts = "-ra --strict-markers --cov=app --cov-report=term-missing --cov-report=xml"
+
+# ============================================================
+#  coverage
+# ============================================================
+[tool.coverage.run]
+source = ["app"]
+omit = [
+    "app/__init__.py",
+    "app/pages/*",
+    "*/tests/*",
+]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "pass",
+]
+show_missing = true
+skip_covered = false
+fail_under = 60
+
+# ============================================================
+#  ruff
+# ============================================================
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+exclude = ["notebooks", ".ipynb_checkpoints"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B", "C4", "SIM"]
+ignore = ["E501", "B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]
+
+# ============================================================
+#  mypy
+# ============================================================
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+exclude = ["notebooks/"]
