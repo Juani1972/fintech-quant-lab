@@ -1,14 +1,14 @@
 """Descarga y gestión de datos de mercado."""
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import date
-from typing import Iterable, Literal
+from typing import Literal
 
 import numpy as np
 import pandas as pd
 import streamlit as st
 import yfinance as yf
-
 
 MissingPolicy = Literal["ffill", "drop", "raise"]
 
@@ -85,12 +85,11 @@ def load_prices(
         data = data.ffill()
     elif missing_policy == "drop":
         data = data.dropna()
-    elif missing_policy == "raise":
-        if data.isna().any().any():
-            raise ValueError(
-                f"Hay {int(data.isna().sum().sum())} NaN en los datos y "
-                "missing_policy='raise'."
-            )
+    elif missing_policy == "raise" and data.isna().any().any():
+        raise ValueError(
+            f"Hay {int(data.isna().sum().sum())} NaN en los datos y "
+            "missing_policy='raise'."
+        )
 
     if data.empty:
         raise ValueError("Tras aplicar la política de NaNs no quedan datos válidos.")
