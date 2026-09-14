@@ -1,6 +1,7 @@
 """Optimización de parámetros de estrategias."""
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from itertools import product
@@ -10,6 +11,8 @@ import pandas as pd
 
 from app.core.backtest import run_backtest
 from app.core.walkforward import SignalGenerator, walk_forward_analysis
+
+logger = logging.getLogger(__name__)
 
 GeneratorFactory = Callable[[dict], SignalGenerator]
 SimpleSignalFactory = Callable[[pd.Series, dict], pd.Series]
@@ -82,6 +85,10 @@ def grid_search(
             row = {**params, **result.metrics}
             rows.append(row)
         except Exception:
+            logger.warning(
+                "Combinación de parámetros descartada en grid_search: %s", params,
+                exc_info=True,
+            )
             row = {**params}
             row[objective] = np.nan
             rows.append(row)
@@ -99,7 +106,14 @@ def grid_search(
     best = grid.loc[idx]
 
     param_names = list(param_grid.keys())
-    best_params = {k: _coerce(best[k]) for k in param_names}
+    # best_params se extrae columna a columna (grid[k].loc[idx]) y no de
+    # `best[k]` (la fila ya extraída): una fila de un DataFrame con
+    # columnas de distinto dtype (window:int64, sharpe:float64...) se
+    # homogeneiza a un único dtype (float64) al extraerla como Series,
+    # así que un parámetro entero como una ventana volvería siempre como
+    # float (30.0 en vez de 30) y rompería cualquier código que lo use
+    # para indexar (p.ej. `prices.pct_change(window)`).
+    best_params = {k: _coerce(grid[k].loc[idx]) for k in param_names}
     best_metrics = {k: float(best[k]) for k in grid.columns if k not in param_names}
 
     return OptimizationResult(
@@ -109,6 +123,118 @@ def grid_search(
         objective=objective,
         param_names=param_names,
     )
+
+
+def deflated_sharpe_ratio(
+    result: OptimizationResult,
+    strategy_returns: pd.Series,
+    periods_per_year: int = 252,
+) -> dict[str, float]:
+    """Deflated Sharpe Ratio (Bailey & López de Prado, 2014).
+
+    `grid_search` elige la combinación de mayor Sharpe entre N intentos.
+    Cuantas más combinaciones se prueban, más probable es que el Sharpe
+    de la "ganadora" sea alto por puro azar de la selección múltiple
+    (winner's curse), no porque la estrategia tenga una ventaja real.
+
+    El DSR responde: dado que se probaron N combinaciones (con la
+    dispersión de Sharpes observada en `result.grid`), ¿qué tan
+    probable es que el Sharpe de la ganadora sea genuinamente positivo,
+    y no solo el máximo esperable por azar entre N intentos?
+
+    Es la contrapartida, para la selección de parámetros, de la
+    corrección por múltiples tests (Bonferroni/BH) que ya se aplica en
+    el módulo de cointegración.
+
+    Args:
+        result: Resultado de `grid_search` con `objective='sharpe'`
+            (el DSR está definido específicamente para el Sharpe ratio).
+        strategy_returns: Retornos (por barra) de la estrategia ganadora
+            (`result.best_params`), para estimar su asimetría y curtosis.
+        periods_per_year: Periodicidad de `strategy_returns` (252 para
+            retornos diarios de mercados bursátiles).
+
+    Returns:
+        Dict con:
+            - sr_observed: Sharpe anualizado de la combinación ganadora.
+            - sr_expected_max: Sharpe máximo esperado por puro azar,
+              dado el nº de combinaciones probadas.
+            - sr_std: desviación estándar estimada del Sharpe ganador
+              (ajustada por asimetría/curtosis de los retornos).
+            - n_trials: nº de combinaciones válidas usadas para estimar
+              `sr_expected_max`.
+            - dsr: probabilidad en [0, 1] de que el Sharpe verdadero sea
+              > 0 una vez descontado el sesgo de selección. Como regla
+              práctica, DSR > 0.95 sugiere que el resultado probablemente
+              no es solo un artefacto de haber probado muchas combinaciones.
+
+    Nota: la fórmula asume trials aproximadamente independientes. Si el
+    grid varía un único parámetro de forma continua (p.ej. ventanas de
+    5 en 5), combinaciones vecinas producen estrategias muy
+    correlacionadas entre sí, lo que puede hacer que el DSR sea más
+    conservador de lo necesario. Es una limitación conocida del método
+    (Bailey & López de Prado, 2014), no un error de esta implementación.
+
+    Raises:
+        ValueError: Si `result.objective != 'sharpe'`, si hay menos de
+            10 observaciones de retornos, o menos de 2 combinaciones
+            válidas en el grid.
+    """
+    from scipy.stats import kurtosis, norm, skew
+
+    if result.objective != "sharpe":
+        raise ValueError(
+            "deflated_sharpe_ratio requiere un grid_search con "
+            f"objective='sharpe' (se usó '{result.objective}')."
+        )
+
+    returns = strategy_returns.dropna().to_numpy()
+    n_obs = len(returns)
+    if n_obs < 10:
+        raise ValueError(
+            f"Se necesitan al menos 10 observaciones de retornos (hay {n_obs})."
+        )
+
+    ret_std = returns.std(ddof=1)
+    sr_period = float(returns.mean() / ret_std) if ret_std > 0 else 0.0
+    sr_annual = sr_period * np.sqrt(periods_per_year)
+
+    trial_sharpes = result.grid[result.objective].dropna().to_numpy()
+    n_trials = len(trial_sharpes)
+    if n_trials < 2:
+        raise ValueError(
+            f"Se necesitan al menos 2 combinaciones válidas en el grid (hay {n_trials})."
+        )
+
+    # Sharpe máximo esperado por azar entre n_trials intentos con
+    # varianza sr_std_trials (aproximación de Bailey & López de Prado).
+    sr_std_trials = float(np.std(trial_sharpes, ddof=1)) if n_trials > 1 else 0.0
+    euler_mascheroni = 0.5772156649015329
+    if sr_std_trials > 0:
+        sr_expected_max = sr_std_trials * (
+            (1 - euler_mascheroni) * norm.ppf(1 - 1 / n_trials)
+            + euler_mascheroni * norm.ppf(1 - 1 / (n_trials * np.e))
+        )
+    else:
+        sr_expected_max = 0.0
+
+    # Desviación del estimador del Sharpe, ajustada por asimetría y
+    # curtosis de los retornos de la estrategia ganadora.
+    skew_r = float(skew(returns))
+    kurt_r = float(kurtosis(returns, fisher=False))  # normal -> 3.0
+    denom = max(1 - skew_r * sr_period + (kurt_r - 1) / 4 * sr_period ** 2, 1e-12)
+    sigma_sr_annual = float(np.sqrt(denom / (n_obs - 1)) * np.sqrt(periods_per_year))
+
+    dsr = float(norm.cdf((sr_annual - sr_expected_max) / sigma_sr_annual)) \
+        if sigma_sr_annual > 0 else float("nan")
+
+    return {
+        "sr_observed": sr_annual,
+        "sr_expected_max": float(sr_expected_max),
+        "sr_std": sigma_sr_annual,
+        "n_trials": n_trials,
+        "dsr": dsr,
+    }
 
 
 def grid_search_walkforward(
@@ -153,6 +279,10 @@ def grid_search_walkforward(
             }
             rows.append(row)
         except Exception:
+            logger.warning(
+                "Combinación de parámetros descartada en grid_search_walkforward: %s",
+                params, exc_info=True,
+            )
             row = {**params}
             row[f"oos_{objective}"] = np.nan
             rows.append(row)
@@ -171,7 +301,9 @@ def grid_search_walkforward(
     best = grid.loc[idx]
 
     param_names = list(param_grid.keys())
-    best_params = {k: _coerce(best[k]) for k in param_names}
+    # Ver el comentario equivalente en grid_search(): se extrae columna a
+    # columna para no perder el dtype entero de los parámetros.
+    best_params = {k: _coerce(grid[k].loc[idx]) for k in param_names}
     best_is = {k.replace("is_", ""): float(best[k]) for k in grid.columns if k.startswith("is_")}
     best_oos = {k.replace("oos_", ""): float(best[k]) for k in grid.columns if k.startswith("oos_")}
 

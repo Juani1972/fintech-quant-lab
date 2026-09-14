@@ -88,6 +88,111 @@ def expected_shortfall_parametric(returns: pd.Series, confidence: float = 0.95) 
     return float(es)
 
 
+def value_at_risk_cornish_fisher(returns: pd.Series, confidence: float = 0.95) -> float:
+    """VaR modificado de Cornish-Fisher (positivo = pérdida).
+
+    `value_at_risk_parametric` asume que los retornos son normales, lo
+    que subestima el riesgo de colas cuando la distribución real tiene
+    asimetría negativa o exceso de curtosis (el caso típico de
+    retornos financieros diarios). Cornish-Fisher ajusta el cuantil
+    normal `z` usando la asimetría y curtosis EMPÍRICAS de la propia
+    serie, sin necesitar asumir ninguna distribución paramétrica
+    concreta para las colas.
+
+    VaR_CF = -(mu + z_cf * sigma), donde z_cf es el cuantil normal `z`
+    corregido por asimetría (S) y curtosis (K):
+
+        z_cf = z + (z²-1)S/6 + (z³-3z)(K-3)/24 - (2z³-5z)S²/36
+
+    Con S=0 y K=3 (normal), z_cf = z y esto coincide exactamente con
+    `value_at_risk_parametric`.
+
+    Nota: la expansión de Cornish-Fisher es una aproximación y puede
+    dar resultados poco fiables con asimetría/curtosis muy extremas
+    (z_cf deja de ser monótono en la cola). Es razonablemente fiable
+    para la magnitud de desviación de la normalidad típica en retornos
+    diarios de acciones/índices.
+    """
+    from scipy.stats import kurtosis, norm, skew
+
+    clean = _validate_returns(returns)
+    _validate_confidence(confidence)
+
+    mu = clean.mean()
+    sigma = clean.std(ddof=1)
+    s = float(skew(clean))
+    k = float(kurtosis(clean, fisher=False))  # curtosis "normal" (no excess); normal=3
+
+    z = norm.ppf(1 - confidence)
+    z_cf = (
+        z
+        + (z**2 - 1) * s / 6
+        + (z**3 - 3 * z) * (k - 3) / 24
+        - (2 * z**3 - 5 * z) * s**2 / 36
+    )
+    return float(-(mu + z_cf * sigma))
+
+
+def value_at_risk_filtered_historical(
+    returns: pd.Series,
+    conditional_volatility: pd.Series,
+    forecast_volatility: float,
+    confidence: float = 0.95,
+) -> float:
+    """VaR de simulación histórica filtrada (Filtered Historical Simulation).
+
+    El VaR histórico simple (`value_at_risk`) asume implícitamente que
+    la volatilidad futura será igual al promedio de todo el histórico
+    usado. Esto es poco realista con clustering de volatilidad (el
+    fenómeno que precisamente modela GARCH): si el mercado está ahora
+    mismo más tranquilo o más agitado que su media histórica, el VaR
+    histórico simple estará sesgado.
+
+    La FHS corrige esto: estandariza cada retorno histórico dividiendo
+    por su propia volatilidad condicional (de un modelo GARCH ya
+    ajustado — ver `app.core.garch.fit_garch`), calcula el percentil
+    histórico de esos residuos estandarizados (que ya no deberían tener
+    el clustering de volatilidad), y lo reescala por la volatilidad
+    PRONOSTICADA para el periodo actual.
+
+    Args:
+        returns: Retornos históricos.
+        conditional_volatility: Volatilidad condicional estimada por un
+            modelo GARCH para cada retorno histórico (mismo índice /
+            alineable con `returns`; p.ej.
+            `GarchResult.conditional_volatility` de `app.core.garch`).
+        forecast_volatility: Volatilidad pronosticada para el periodo a
+            estimar (p.ej. el primer valor de
+            `garch.forecast_volatility(...)`).
+        confidence: Nivel de confianza.
+
+    Returns:
+        VaR (positivo = pérdida), en las mismas unidades que `returns`.
+
+    Raises:
+        ValueError: Si quedan menos de 20 observaciones alineadas, si
+            `conditional_volatility` tiene valores <= 0, o si
+            `forecast_volatility` <= 0.
+    """
+    _validate_confidence(confidence)
+    if forecast_volatility <= 0:
+        raise ValueError("forecast_volatility debe ser > 0.")
+
+    df = pd.concat(
+        [returns.rename("r"), conditional_volatility.rename("vol")], axis=1,
+    ).dropna()
+    if len(df) < 20:
+        raise ValueError(
+            f"Se necesitan al menos 20 observaciones alineadas (hay {len(df)})."
+        )
+    if (df["vol"] <= 0).any():
+        raise ValueError("conditional_volatility debe ser > 0 en todas las observaciones.")
+
+    standardized = df["r"] / df["vol"]
+    q = float(np.percentile(standardized, (1 - confidence) * 100))
+    return float(-q * forecast_volatility)
+
+
 def rolling_var(
     returns: pd.Series,
     window: int = 250,

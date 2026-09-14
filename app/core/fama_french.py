@@ -7,7 +7,9 @@ from datetime import date
 import pandas as pd
 import pandas_datareader.data as web
 import statsmodels.api as sm
-import streamlit as st
+
+from app.config import CACHE_TTL_FACTORS
+from app.core.cache import cached
 
 FACTOR_COLS = {
     "3": ["Mkt-RF", "SMB", "HML"],
@@ -37,7 +39,7 @@ class FamaFrenchResult:
     summary: str
 
 
-@st.cache_data(ttl=86400, show_spinner=False)
+@cached(ttl=CACHE_TTL_FACTORS, show_spinner=False)
 def load_factors(
     start: date,
     end: date,

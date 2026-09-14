@@ -10,6 +10,7 @@ Incluye:
 """
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -17,6 +18,8 @@ import numpy as np
 import pandas as pd
 
 from app.core.backtest import run_backtest
+
+logger = logging.getLogger(__name__)
 
 
 # ============================================================
@@ -158,6 +161,10 @@ def parameter_sensitivity(
             )
             rows.append({"value": val, metric: result.metrics.get(metric, np.nan)})
         except Exception:
+            logger.warning(
+                "parameter_sensitivity: valor %s de '%s' descartado.",
+                val, param_name, exc_info=True,
+            )
             rows.append({"value": val, metric: np.nan})
 
     df = pd.DataFrame(rows).sort_values("value")
@@ -182,39 +189,84 @@ class RobustnessReport:
     interpretation: str
 
 
+# Pesos por defecto (puntos máximos de cada componente, suman 100).
+# Son una elección heurística del autor -- no están derivados de ninguna
+# teoría formal de cuánto "debería" pesar cada factor. Se exponen como
+# parámetro de `robustness_score` precisamente para que se pueda evaluar
+# qué tan sensible es el score final a esta elección (ver
+# `robustness_score_weight_sensitivity`).
+DEFAULT_ROBUSTNESS_WEIGHTS: dict[str, float] = {
+    "degradacion_is_oos": 30.0,
+    "monte_carlo_sharpe": 30.0,
+    "estabilidad_parametros": 25.0,
+    "n_trades": 15.0,
+}
+
+
 def robustness_score(
     is_sharpe: float,
     oos_sharpe: float,
     mc_result: MonteCarloResult,
     sensitivity_score: float,
     n_trades: int,
+    weights: dict[str, float] | None = None,
 ) -> RobustnessReport:
     """Calcula un score agregado de robustez 0-100.
 
-    Componentes:
+    Componentes (heurísticos, ver `DEFAULT_ROBUSTNESS_WEIGHTS`):
         - Degradación IS → OOS.
         - Sharpe Monte Carlo medio (positivo).
         - Estabilidad de parámetros.
         - Nº suficiente de trades.
+
+    Los pesos por defecto (30/30/25/15) son una elección razonada pero
+    arbitraria del autor, no un resultado derivado formalmente. Pasa
+    `weights` para explorar otras ponderaciones, o usa
+    `robustness_score_weight_sensitivity` para ver de un vistazo cuánto
+    cambia el score final entre varios esquemas de pesos razonables.
+
+    Args:
+        is_sharpe, oos_sharpe: Sharpe anualizado in-sample / out-of-sample.
+        mc_result: Resultado de `monte_carlo_bootstrap` sobre retornos OOS.
+        sensitivity_score: `stability_score` de `parameter_sensitivity`
+            (en [0, 1]; 1 = totalmente estable).
+        n_trades: Nº de operaciones ejecutadas (más trades = componente
+            más fiable estadísticamente, hasta un máximo de 100).
+        weights: Override de `DEFAULT_ROBUSTNESS_WEIGHTS`. Debe usar las
+            mismas 4 claves; no hace falta que sumen 100 (el resultado
+            se sigue acotando a [0, 100]).
     """
+    w = weights if weights is not None else DEFAULT_ROBUSTNESS_WEIGHTS
+    missing = set(DEFAULT_ROBUSTNESS_WEIGHTS) - set(w)
+    if missing:
+        raise ValueError(f"Faltan pesos para: {sorted(missing)}")
+
     components: dict[str, float] = {}
 
-    # 1. Degradación IS → OOS (0-30 puntos)
+    # 1. Degradación IS → OOS
     if np.isfinite(is_sharpe) and np.isfinite(oos_sharpe) and abs(is_sharpe) > 1e-6:
         degradation = max(0.0, (is_sharpe - oos_sharpe) / abs(is_sharpe))
-        components["degradacion_is_oos"] = float(np.clip(30 * (1 - min(degradation, 1)), 0, 30))
+        components["degradacion_is_oos"] = float(
+            np.clip(w["degradacion_is_oos"] * (1 - min(degradation, 1)), 0, w["degradacion_is_oos"])
+        )
     else:
         components["degradacion_is_oos"] = 0.0
 
-    # 2. Sharpe MC medio (0-30 puntos)
+    # 2. Sharpe MC medio
     mc_sharpe = mc_result.mean
-    components["monte_carlo_sharpe"] = float(np.clip(30 * (mc_sharpe / 2), 0, 30))
+    components["monte_carlo_sharpe"] = float(
+        np.clip(w["monte_carlo_sharpe"] * (mc_sharpe / 2), 0, w["monte_carlo_sharpe"])
+    )
 
-    # 3. Estabilidad de parámetros (0-25 puntos)
-    components["estabilidad_parametros"] = float(np.clip(25 * sensitivity_score, 0, 25))
+    # 3. Estabilidad de parámetros
+    components["estabilidad_parametros"] = float(
+        np.clip(w["estabilidad_parametros"] * sensitivity_score, 0, w["estabilidad_parametros"])
+    )
 
-    # 4. Nº de trades (0-15 puntos)
-    components["n_trades"] = float(np.clip(15 * min(n_trades / 100, 1), 0, 15))
+    # 4. Nº de trades
+    components["n_trades"] = float(
+        np.clip(w["n_trades"] * min(n_trades / 100, 1), 0, w["n_trades"])
+    )
 
     final = sum(components.values())
     final = float(np.clip(final, 0, 100))
@@ -233,6 +285,50 @@ def robustness_score(
         final_score=final,
         interpretation=interp,
     )
+
+
+def robustness_score_weight_sensitivity(
+    is_sharpe: float,
+    oos_sharpe: float,
+    mc_result: MonteCarloResult,
+    sensitivity_score: float,
+    n_trades: int,
+) -> pd.DataFrame:
+    """Recalcula el robustness score bajo varios esquemas de pesos, para
+    ver de un vistazo cuánto depende el número final de la ponderación
+    30/30/25/15 elegida por defecto (ver `robustness_score`).
+
+    Devuelve un DataFrame con una fila por esquema de pesos y el score
+    final resultante. Si el score varía poco entre esquemas, la
+    conclusión ("robusta"/"frágil"/etc.) es fiable independientemente
+    del pesaje; si varía mucho, conviene no tomar el número por defecto
+    como definitivo.
+    """
+    schemes = {
+        "default (30/30/25/15)": DEFAULT_ROBUSTNESS_WEIGHTS,
+        "equitativo (25/25/25/25)": {
+            "degradacion_is_oos": 25.0, "monte_carlo_sharpe": 25.0,
+            "estabilidad_parametros": 25.0, "n_trades": 25.0,
+        },
+        "prioriza OOS (45/30/15/10)": {
+            "degradacion_is_oos": 45.0, "monte_carlo_sharpe": 30.0,
+            "estabilidad_parametros": 15.0, "n_trades": 10.0,
+        },
+        "prioriza estabilidad (15/20/50/15)": {
+            "degradacion_is_oos": 15.0, "monte_carlo_sharpe": 20.0,
+            "estabilidad_parametros": 50.0, "n_trades": 15.0,
+        },
+    }
+
+    rows = []
+    for name, w in schemes.items():
+        report = robustness_score(
+            is_sharpe, oos_sharpe, mc_result, sensitivity_score, n_trades, weights=w,
+        )
+        rows.append({"esquema": name, "score_final": report.final_score,
+                      "interpretacion": report.interpretation})
+
+    return pd.DataFrame(rows)
 
 
 # ============================================================

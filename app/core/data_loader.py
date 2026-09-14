@@ -7,13 +7,15 @@ from typing import Literal
 
 import numpy as np
 import pandas as pd
-import streamlit as st
 import yfinance as yf
+
+from app.config import CACHE_TTL
+from app.core.cache import cached
 
 MissingPolicy = Literal["ffill", "drop", "raise"]
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@cached(ttl=CACHE_TTL, show_spinner=False)
 def load_prices(
     tickers: Iterable[str],
     start: date,
