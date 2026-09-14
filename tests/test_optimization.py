@@ -5,6 +5,7 @@ import pytest
 
 from app.core.optimization import (
     _expand_grid,
+    deflated_sharpe_ratio,
     grid_search,
     heatmap_data,
 )
@@ -85,3 +86,56 @@ def test_heatmap_data(prices_series):
     grid["dummy"] = [1, 2, 3]
     hm = heatmap_data(grid, x_param="window", y_param="dummy", metric="sharpe")
     assert hm.shape == (3, 3)
+
+
+def test_grid_search_preserves_int_param_dtype(prices_series):
+    """Regresión: un parámetro entero (window) debe volver como `int` en
+    best_params, no como `float`. Una fila de un DataFrame con columnas
+    de distinto dtype se homogeneiza a un único dtype al extraerla como
+    Series; extraer `best_params` de esa fila ya homogeneizada devolvía
+    30.0 en vez de 30, lo que rompía cualquier código que usara ese
+    parámetro para indexar (p.ej. `prices.pct_change(window)`).
+    """
+    result = grid_search(
+        prices=prices_series,
+        signal_factory=_momentum_factory,
+        param_grid={"window": [10, 20, 30, 40, 50]},
+        objective="sharpe",
+    )
+    assert isinstance(result.best_params["window"], int)
+
+
+def test_deflated_sharpe_ratio_bounds(prices_series):
+    """El DSR debe devolver una probabilidad válida en [0, 1] y ser
+    consistente: n_trials debe coincidir con el nº de combinaciones
+    válidas del grid.
+    """
+    from app.core.backtest import run_backtest
+
+    result = grid_search(
+        prices=prices_series,
+        signal_factory=_momentum_factory,
+        param_grid={"window": [10, 20, 30, 40, 50]},
+        objective="sharpe",
+    )
+    best_signals = _momentum_factory(
+        prices_series, result.best_params
+    ).reindex(prices_series.index).fillna(0)
+    bt = run_backtest(prices_series, best_signals, commission=0.0005, slippage=0.0002)
+
+    dsr = deflated_sharpe_ratio(result, bt.returns)
+
+    assert 0.0 <= dsr["dsr"] <= 1.0
+    assert dsr["n_trials"] == 5
+    assert dsr["sr_std"] >= 0.0
+
+
+def test_deflated_sharpe_ratio_requires_sharpe_objective(prices_series):
+    result = grid_search(
+        prices=prices_series,
+        signal_factory=_momentum_factory,
+        param_grid={"window": [10, 20]},
+        objective="total_return",
+    )
+    with pytest.raises(ValueError, match="objective='sharpe'"):
+        deflated_sharpe_ratio(result, prices_series.pct_change().dropna())

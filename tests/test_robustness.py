@@ -10,6 +10,7 @@ from app.core.robustness import (
     monte_carlo_bootstrap,
     monte_carlo_gbm,
     robustness_score,
+    robustness_score_weight_sensitivity,
 )
 
 
@@ -107,3 +108,55 @@ def test_robustness_score_fragile():
     )
     assert report.final_score < 50
     assert "Frágil" in report.interpretation or "frágil" in report.interpretation
+
+
+def test_robustness_score_custom_weights():
+    """Los pesos deben ser sobreescribibles y afectar al resultado."""
+    mc = MonteCarloResult(
+        n_simulations=100, horizon=252, metric="sharpe",
+        distribution=np.random.normal(0.8, 0.3, 100),
+        mean=0.8, std=0.3,
+        percentiles={"p05": 0.3, "p25": 0.6, "p50": 0.8, "p75": 1.0, "p95": 1.3},
+        var_95=0.2, cvar_95=0.1,
+    )
+    kwargs = {"is_sharpe": 1.5, "oos_sharpe": 0.9, "mc_result": mc,
+              "sensitivity_score": 0.7, "n_trades": 80}
+
+    default_report = robustness_score(**kwargs)
+    custom_report = robustness_score(
+        weights={"degradacion_is_oos": 10.0, "monte_carlo_sharpe": 10.0,
+                 "estabilidad_parametros": 70.0, "n_trades": 10.0},
+        **kwargs,
+    )
+    assert default_report.final_score != custom_report.final_score
+
+
+def test_robustness_score_missing_weight_key_raises():
+    mc = MonteCarloResult(
+        n_simulations=10, horizon=10, metric="sharpe",
+        distribution=np.zeros(10), mean=0.0, std=0.0,
+        percentiles={"p50": 0.0}, var_95=0.0, cvar_95=0.0,
+    )
+    with pytest.raises(ValueError, match="Faltan pesos"):
+        robustness_score(
+            is_sharpe=1.0, oos_sharpe=1.0, mc_result=mc,
+            sensitivity_score=0.5, n_trades=10,
+            weights={"degradacion_is_oos": 100.0},
+        )
+
+
+def test_robustness_score_weight_sensitivity_shape():
+    mc = MonteCarloResult(
+        n_simulations=100, horizon=252, metric="sharpe",
+        distribution=np.random.normal(0.8, 0.3, 100),
+        mean=0.8, std=0.3,
+        percentiles={"p05": 0.3, "p25": 0.6, "p50": 0.8, "p75": 1.0, "p95": 1.3},
+        var_95=0.2, cvar_95=0.1,
+    )
+    df = robustness_score_weight_sensitivity(
+        is_sharpe=1.5, oos_sharpe=0.9, mc_result=mc,
+        sensitivity_score=0.7, n_trades=80,
+    )
+    assert {"esquema", "score_final", "interpretacion"}.issubset(df.columns)
+    assert len(df) == 4
+    assert df["score_final"].between(0, 100).all()

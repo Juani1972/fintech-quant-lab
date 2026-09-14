@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 
 from app.core.backtest import (
+    benchmark_metrics,
     buy_and_hold,
     compare_to_benchmark,
     run_backtest,
@@ -170,3 +171,70 @@ def test_compare_to_benchmark(prices_up):
     assert "strategy_norm" in df.columns
     assert "benchmark_norm" in df.columns
     assert df["strategy_norm"].iloc[0] == pytest.approx(1.0)
+
+
+def test_multiple_trades_bars_held(prices_zigzag):
+    """Varias operaciones (long -> short -> flat -> long) deben quedar bien
+    emparejadas, con bars_held correcto en cada una.
+
+    Regresión para la extracción vectorizada de trades: la versión
+    original recalculaba la equity O(n) veces por iteración (O(n²) total)
+    y usaba `index.get_loc` para el `bars_held`; este test fija el
+    comportamiento esperado para detectar cualquier desajuste futuro.
+    """
+    signals = pd.Series(
+        [1, 1, 1, -1, -1, 0, 0, 1, 1, 1], index=prices_zigzag.index, dtype=float,
+    )
+    result = run_backtest(prices_zigzag, signals, commission=0, slippage=0)
+
+    assert result.metrics["n_trades"] == 3
+    directions = list(result.trades["direction"])
+    assert directions == ["long", "short", "long"]
+
+    bars_held = list(result.trades["bars_held"])
+    assert bars_held == [3, 2, 1]
+
+    # Primer trade: long, entra en precio 102 (t=1), sale en 104 (t=4).
+    trade0 = result.trades.iloc[0]
+    assert trade0["entry_price"] == pytest.approx(102.0)
+    assert trade0["exit_price"] == pytest.approx(104.0)
+    assert trade0["pnl_pct"] == pytest.approx((104.0 - 102.0) / 102.0, rel=1e-9)
+
+
+def test_benchmark_metrics_beta_matches_leverage():
+    """Una 'estrategia' que es el benchmark apalancado 2x debe dar
+    beta ~= 2.
+    """
+    np.random.seed(0)
+    dates = pd.bdate_range("2020-01-01", periods=500)
+    bench_log_returns = np.random.normal(0.0003, 0.01, 500)
+    benchmark = pd.Series(100 * np.exp(np.cumsum(bench_log_returns)), index=dates)
+    strategy = pd.Series(
+        100 * np.exp(np.cumsum(2 * bench_log_returns)), index=dates,
+    )
+
+    m = benchmark_metrics(strategy, benchmark)
+    assert m["beta"] == pytest.approx(2.0, abs=0.05)
+
+
+def test_benchmark_metrics_zero_tracking_error_when_identical():
+    """Si la estrategia es idéntica al benchmark, tracking_error y
+    jensen_alpha deben ser (casi) cero y beta (casi) 1.
+    """
+    np.random.seed(1)
+    dates = pd.bdate_range("2020-01-01", periods=300)
+    prices = pd.Series(
+        100 * np.exp(np.cumsum(np.random.normal(0.0003, 0.01, 300))), index=dates,
+    )
+    m = benchmark_metrics(prices, prices)
+    assert m["beta"] == pytest.approx(1.0, abs=1e-6)
+    assert m["tracking_error"] == pytest.approx(0.0, abs=1e-9)
+    assert m["jensen_alpha"] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_benchmark_metrics_rejects_constant_benchmark():
+    dates = pd.bdate_range("2020-01-01", periods=10)
+    strategy = pd.Series(np.linspace(100, 110, 10), index=dates)
+    flat_benchmark = pd.Series([100.0] * 10, index=dates)
+    with pytest.raises(ValueError, match="varianza"):
+        benchmark_metrics(strategy, flat_benchmark)

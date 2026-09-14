@@ -102,3 +102,46 @@ def test_walk_forward_is_and_oos_metrics_present(prices_series):
     for m in ["total_return", "sharpe", "max_drawdown"]:
         assert m in result.is_metrics_agg
         assert m in result.oos_metrics_agg
+
+
+def test_walk_forward_embargo_creates_gap(prices_series):
+    """Con embargo > 0 debe quedar un hueco entre el final del tramo de
+    entrenamiento y el inicio del test de cada ventana.
+    """
+    result = walk_forward_analysis(
+        prices=prices_series,
+        signal_generator=signal_from_momentum(window=30),
+        train_size=200,
+        test_size=50,
+        step=50,
+        embargo=10,
+    )
+    idx = prices_series.index
+    for w in result.windows:
+        gap_bars = idx.get_loc(w.test_start) - idx.get_loc(w.train_end)
+        assert gap_bars == 11  # 10 barras de embargo + 1 de paso normal
+    assert result.params["embargo"] == 10
+
+
+def test_walk_forward_embargo_zero_matches_default(prices_series):
+    """embargo=0 (por defecto) debe dar exactamente el mismo resultado
+    que antes de introducir el parámetro (retrocompatibilidad).
+    """
+    kwargs = {
+        "prices": prices_series,
+        "signal_generator": signal_from_momentum(window=30),
+        "train_size": 200, "test_size": 50, "step": 50,
+    }
+    r_default = walk_forward_analysis(**kwargs)
+    r_explicit = walk_forward_analysis(embargo=0, **kwargs)
+    assert r_default.params["n_windows"] == r_explicit.params["n_windows"]
+    assert r_default.oos_equity_concat.equals(r_explicit.oos_equity_concat)
+
+
+def test_walk_forward_negative_embargo_rejected(prices_series):
+    with pytest.raises(ValueError, match="embargo"):
+        walk_forward_analysis(
+            prices=prices_series,
+            signal_generator=signal_from_momentum(window=30),
+            train_size=200, test_size=50, embargo=-1,
+        )
