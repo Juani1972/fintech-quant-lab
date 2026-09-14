@@ -1,4 +1,4 @@
- """Página de métricas de riesgo."""
+"""Página de métricas de riesgo."""
 import streamlit as st
 
 from app.core.data_loader import compute_log_returns, load_prices
