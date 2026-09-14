@@ -166,4 +166,4 @@ else:
         variant="info",
     )
 
-footer() 
+footer()
