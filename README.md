@@ -21,7 +21,7 @@ Construida con **Streamlit** + **statsmodels** + **arch** + **yfinance**.
 ### Opción 1: Local (pip)
 
 ```bash
-git clone https://github.com/tu-usuario/fintech-quant-lab.git
+git clone https://github.com/Juani1972/fintech-quant-lab.git
 cd fintech-quant-lab
 python -m venv venv
 source venv/bin/activate   # En Windows: venv\Scripts\activate
