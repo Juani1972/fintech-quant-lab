@@ -9,7 +9,8 @@ DEFAULT_TICKERS = ["KO", "PEP"]
 DEFAULT_END = date.today()
 DEFAULT_START = date.today() - timedelta(days=3 * 365)
 
-CACHE_TTL = 3600  # segundos
+CACHE_TTL = 3600  # segundos — precios de mercado (cambian intradía)
+CACHE_TTL_FACTORS = 86400  # segundos — factores Fama-French (se publican a diario)
 
 # ============================================================
 #  Tema
