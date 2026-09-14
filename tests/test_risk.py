@@ -14,11 +14,19 @@ from app.core.risk import (
 
 
 def test_var_known_value():
-    # 100 retornos: 95 positivos pequeños, 5 muy negativos
+    """VaR con percentil calculado explícitamente, no a ojo."""
     returns = pd.Series([0.01] * 95 + [-0.05] * 5)
+    expected = -np.percentile(returns, 5)
     var = value_at_risk(returns, confidence=0.95)
-    assert var > 0
-    assert pytest.approx(var, rel=0.01) == 0.05
+    assert var == pytest.approx(expected)
+
+
+def test_var_increases_with_confidence():
+    np.random.seed(42)
+    returns = pd.Series(np.random.normal(0, 0.02, 1000))
+    var_95 = value_at_risk(returns, 0.95)
+    var_99 = value_at_risk(returns, 0.99)
+    assert var_99 >= var_95
 
 
 def test_expected_shortfall_greater_than_var():
@@ -44,14 +52,18 @@ def test_drawdown_series_length():
 
 
 def test_sharpe_ratio_positive_for_positive_returns():
-    returns = pd.Series(np.full(252, 0.001))
-    # Varianza cero → sharpe infinito o NaN; usar serie con algo de ruido
+    np.random.seed(0)
     returns = pd.Series(np.random.normal(0.001, 0.01, 252))
     assert sharpe_ratio(returns) != 0
 
 
 def test_sortino_ratio_handles_no_downside():
     returns = pd.Series(np.full(252, 0.001))
-    # Sin downside → debería devolver NaN o inf, no crashear
     result = sortino_ratio(returns)
     assert np.isnan(result) or np.isinf(result)
+
+
+def test_var_rejects_invalid_confidence():
+    returns = pd.Series([0.01, 0.02, -0.01])
+    with pytest.raises(ValueError, match="confidence"):
+        value_at_risk(returns, confidence=1.5)
