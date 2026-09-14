@@ -1,16 +1,71 @@
 [project]
 name = "fintech-quant-lab"
-version = "0.1.0"
-description = "GUI para análisis cuantitativo de series temporales financieras"
-authors = [{name = "Tu Nombre", email = "tu@email.com"}]
-requires-python = ">=3.10"
+version = "0.2.0"
+description = "Plataforma de análisis cuantitativo de series temporales financieras"
 readme = "README.md"
-license = {text = "MIT"}
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Juan Orozco", email = "juani1972@users.noreply.github.com" }
+]
+keywords = ["finance", "quant", "garch", "cointegration", "backtesting", "streamlit"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Office/Business :: Financial :: Investment",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
+
+dependencies = [
+    "streamlit>=1.30.0",
+    "yfinance>=0.2.40",
+    "pandas>=2.1.0",
+    "numpy>=1.26.0",
+    "scipy>=1.11.0",
+    "statsmodels>=0.14.0",
+    "arch>=6.3.0",
+    "pandas-datareader>=0.10.0",
+    "matplotlib>=3.8.0",
+    "plotly>=5.18.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.4.0",
+    "mypy>=1.10.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/Juani1972/fintech-quant-lab"
+Repository = "https://github.com/Juani1972/fintech-quant-lab.git"
+Issues = "https://github.com/Juani1972/fintech-quant-lab/issues"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["app", "app.core"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = "test_*.py"
+addopts = "-ra --strict-markers"
 
-[tool.black]
+[tool.ruff]
 line-length = 100
-target-version = ["py310"]
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
