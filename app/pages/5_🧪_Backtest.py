@@ -1,4 +1,4 @@
-  """Página de backtesting de estrategias cuantitativas."""
+"""Página de backtesting de estrategias cuantitativas."""
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -11,8 +11,10 @@ from app.core.backtest import (
 )
 from app.core.cointegration import (
     engle_granger,
-    generate_signals as signals_pairs,
     rolling_zscore,
+)
+from app.core.cointegration import (
+    generate_signals as signals_pairs,
 )
 from app.core.data_loader import load_prices
 from app.state import ensure_session_initialized, get_global_params
