@@ -1,15 +1,11 @@
 """Página de optimización de parámetros con walk-forward."""
-import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
 from app.core.cointegration import engle_granger
 from app.core.data_loader import load_prices
-from app.core.optimization import (
-    grid_search_walkforward,
-    heatmap_data,
-)
+from app.core.optimization import grid_search_walkforward, heatmap_data
 from app.core.walkforward import (
     signal_from_mean_reversion,
     signal_from_momentum,
@@ -58,6 +54,7 @@ with st.sidebar:
             "Ventanas a probar", [10, 20, 30, 45, 60, 90, 120],
             default=[20, 40, 60],
         )
+        entries = None
     else:
         windows = st.multiselect(
             "Ventanas Z-score", [20, 30, 45, 60, 90, 120],
@@ -69,8 +66,7 @@ with st.sidebar:
         )
 
     objective = st.selectbox(
-        "Objetivo OOS", ["sharpe", "sortino", "calmar", "total_return"],
-        index=0,
+        "Objetivo OOS", ["sharpe", "sortino", "calmar", "total_return"], index=0,
     )
 
     train_size = st.slider("Train size", 200, 1000, 504, 21)
@@ -87,7 +83,6 @@ if run:
             st.error(f"Error al cargar datos: {e}")
             st.stop()
 
-    # --- Serie a operar + factoría de generadores ---
     if strategy == "Pairs Trading (spread)":
         try:
             coint = engle_granger(prices[t1], prices[t2])
@@ -100,13 +95,9 @@ if run:
             return signal_from_pairs_trading(
                 window=params["window"],
                 entry=params["entry"],
-                exit_=params.get("exit_", 0.5),
+                exit_=0.5,
             )
-        param_grid = {
-            "window": windows,
-            "entry": entries,
-            "exit_": [0.5],
-        }
+        param_grid = {"window": windows, "entry": entries}
     elif strategy == "Momentum":
         series = prices[t1]
 
@@ -122,10 +113,7 @@ if run:
                 entry=params["entry"],
                 exit_=0.5,
             )
-        param_grid = {
-            "window": windows,
-            "entry": entries,
-        }
+        param_grid = {"window": windows, "entry": entries}
 
     if not param_grid or any(len(v) == 0 for v in param_grid.values()):
         st.error("Configura al menos un valor en cada parámetro del grid.")
@@ -147,7 +135,6 @@ if run:
 
     st.success(f"Grid completado: {len(result.grid)} combinaciones evaluadas.")
 
-    # --- Mejor combinación ---
     st.subheader("🏆 Mejor combinación (según OOS)")
     col1, col2 = st.columns([1, 2])
     with col1:
@@ -161,7 +148,6 @@ if run:
         })
         st.dataframe(best_df.style.format("{:.4f}"), use_container_width=True)
 
-    # --- Tabla completa del grid ---
     st.subheader("📋 Grid completo")
     display_cols = result.param_names + [
         f"oos_{objective}", f"is_{objective}",
@@ -173,7 +159,6 @@ if run:
         use_container_width=True,
     )
 
-    # --- Heatmap 2D (si hay exactamente 2 parámetros variables) ---
     if len(result.param_names) >= 2:
         st.subheader("🔥 Heatmap de sensibilidad")
         x_param = result.param_names[0]
@@ -197,7 +182,6 @@ if run:
         except Exception as e:
             st.info(f"No se pudo generar el heatmap: {e}")
 
-    # --- Descarga ---
     st.download_button(
         "⬇️ Descargar grid completo (CSV)",
         result.grid.to_csv(index=False).encode("utf-8"),
