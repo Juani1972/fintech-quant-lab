@@ -1,14 +1,7 @@
-"""Optimización de parámetros de estrategias.
-
-Diseñado para evitar overfitting:
-    - Grid search explícito (no random).
-    - Objetivo configurable (Sharpe, Sortino, Calmar, return).
-    - Con la opción de evaluar cada combinación con walk-forward.
-    - Reporte de la superficie de parámetros (para visualizar estabilidad).
-"""
+"""Optimización de parámetros de estrategias."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from itertools import product
 from typing import Callable
 
@@ -19,27 +12,24 @@ from app.core.backtest import run_backtest
 from app.core.walkforward import SignalGenerator, walk_forward_analysis
 
 
-# Tipo: función que recibe un dict de parámetros y devuelve un SignalGenerator
 GeneratorFactory = Callable[[dict], SignalGenerator]
-
-# Tipo: función que recibe un dict de parámetros y devuelve señales sobre la serie
 SimpleSignalFactory = Callable[[pd.Series, dict], pd.Series]
 
 
 @dataclass
 class OptimizationResult:
     """Resultado de un grid search."""
-    grid: pd.DataFrame               # Todas las combinaciones con sus métricas
-    best_params: dict                # Mejor combinación
-    best_metrics: dict               # Métricas de la mejor combinación
-    objective: str                   # Métrica optimizada
+    grid: pd.DataFrame
+    best_params: dict
+    best_metrics: dict
+    objective: str
     param_names: list[str]
 
 
 @dataclass
 class WalkForwardOptimizationResult:
     """Resultado de un grid search evaluado con walk-forward."""
-    grid: pd.DataFrame               # Una fila por combinación, métricas IS/OOS
+    grid: pd.DataFrame
     best_params: dict
     best_oos_metrics: dict
     best_is_metrics: dict
@@ -47,9 +37,6 @@ class WalkForwardOptimizationResult:
     param_names: list[str]
 
 
-# ============================================================
-#  Grid search simple (backtest único)
-# ============================================================
 def grid_search(
     prices: pd.Series,
     signal_factory: SimpleSignalFactory,
@@ -66,14 +53,19 @@ def grid_search(
         prices: Serie de precios.
         signal_factory: Función `(prices, params) -> signals`.
         param_grid: Dict `{nombre: [valores]}`.
-        objective: Métrica a optimizar ('sharpe', 'sortino', 'calmar',
-            'total_return', 'max_drawdown').
-        minimize: Si True, minimiza el objetivo (útil para max_drawdown).
+        objective: Métrica a optimizar.
+        minimize: Si True, minimiza el objetivo.
         initial_capital, commission, slippage: Parámetros del backtest.
 
     Returns:
         OptimizationResult con el grid completo y la mejor combinación.
+
+    Raises:
+        ValueError: Si el grid está vacío o el objetivo no existe.
     """
+    if not param_grid or not any(param_grid.values()):
+        raise ValueError("El grid de parámetros está vacío.")
+
     combos = _expand_grid(param_grid)
     if not combos:
         raise ValueError("El grid de parámetros está vacío.")
@@ -120,9 +112,6 @@ def grid_search(
     )
 
 
-# ============================================================
-#  Grid search con walk-forward (recomendado)
-# ============================================================
 def grid_search_walkforward(
     prices: pd.Series,
     generator_factory: GeneratorFactory,
@@ -136,12 +125,10 @@ def grid_search_walkforward(
     commission: float = 0.001,
     slippage: float = 0.0005,
 ) -> WalkForwardOptimizationResult:
-    """Grid search evaluado con walk-forward (OOS).
+    """Grid search evaluado con walk-forward (OOS)."""
+    if not param_grid or not any(param_grid.values()):
+        raise ValueError("El grid de parámetros está vacío.")
 
-    Este es el método robusto: para cada combinación de parámetros,
-    ejecuta un walk-forward y usa la métrica OOS promedio como objetivo.
-    Evita el overfitting del grid search simple.
-    """
     combos = _expand_grid(param_grid)
     if not combos:
         raise ValueError("El grid de parámetros está vacío.")
@@ -199,11 +186,15 @@ def grid_search_walkforward(
     )
 
 
-# ============================================================
-#  Utilidades
-# ============================================================
 def _expand_grid(param_grid: dict[str, list]) -> list[dict]:
-    """Convierte un dict de listas en una lista de combinaciones."""
+    """Convierte un dict de listas en una lista de combinaciones.
+
+    Devuelve [] si el dict está vacío o si alguna lista de valores está vacía.
+    """
+    if not param_grid:
+        return []
+    if any(not values for values in param_grid.values()):
+        return []
     keys = list(param_grid.keys())
     values = [param_grid[k] for k in keys]
     return [dict(zip(keys, combo)) for combo in product(*values)]
