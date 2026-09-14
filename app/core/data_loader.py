@@ -1,4 +1,4 @@
-  """Descarga y gestión de datos de mercado."""
+ """Descarga y gestión de datos de mercado."""
 from __future__ import annotations
 
 from datetime import date
@@ -78,9 +78,8 @@ def load_prices(
             raise ValueError(f"Campo '{field}' no disponible en los datos.")
         data = raw[[field]].rename(columns={field: tickers[0]})
 
-    # Diagnóstico previo
     n_missing_before = int(data.isna().sum().sum())
-    data = data.dropna(how="all")  # elimina filas totalmente vacías
+    data = data.dropna(how="all")
 
     if missing_policy == "ffill":
         data = data.ffill()
@@ -96,7 +95,6 @@ def load_prices(
     if data.empty:
         raise ValueError("Tras aplicar la política de NaNs no quedan datos válidos.")
 
-    # Metadatos accesibles desde la página
     data.attrs["missing_policy"] = missing_policy
     data.attrs["missing_before"] = n_missing_before
 
@@ -124,7 +122,6 @@ def data_quality_report(prices: pd.DataFrame) -> dict[str, object]:
         "missing_policy": prices.attrs.get("missing_policy", "unknown"),
     }
 
-    # Retornos extremos (> 5 sigma)
     returns = compute_log_returns(prices)
     if not returns.empty:
         z = (returns - returns.mean()) / returns.std()
