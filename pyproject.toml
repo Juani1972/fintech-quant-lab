@@ -1,0 +1,16 @@
+[project]
+name = "fintech-quant-lab"
+version = "0.1.0"
+description = "GUI para análisis cuantitativo de series temporales financieras"
+authors = [{name = "Tu Nombre", email = "tu@email.com"}]
+requires-python = ">=3.10"
+readme = "README.md"
+license = {text = "MIT"}
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
