@@ -1,16 +1,15 @@
-"""Optimización de parámetros de estrategias."""
+ """Optimización de parámetros de estrategias."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from itertools import product
-from typing import Callable
 
 import numpy as np
 import pandas as pd
 
 from app.core.backtest import run_backtest
 from app.core.walkforward import SignalGenerator, walk_forward_analysis
-
 
 GeneratorFactory = Callable[[dict], SignalGenerator]
 SimpleSignalFactory = Callable[[pd.Series, dict], pd.Series]
@@ -197,7 +196,7 @@ def _expand_grid(param_grid: dict[str, list]) -> list[dict]:
         return []
     keys = list(param_grid.keys())
     values = [param_grid[k] for k in keys]
-    return [dict(zip(keys, combo)) for combo in product(*values)]
+    return [dict(zip(keys, combo, strict=True)) for combo in product(*values)]
 
 
 def _coerce(value):
