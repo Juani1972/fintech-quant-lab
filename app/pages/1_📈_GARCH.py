@@ -2,7 +2,6 @@
 import numpy as np
 import streamlit as st
 
-from app.config import DEFAULT_TICKERS
 from app.core.data_loader import load_prices
 from app.core.garch import fit_garch, forecast_volatility, is_stationary
 from app.core.plotting import line_chart
@@ -10,19 +9,30 @@ from app.core.plotting import line_chart
 st.set_page_config(page_title="GARCH", page_icon="📈", layout="wide")
 st.header("📈 Modelado GARCH de Volatilidad")
 
+# --- Leer parámetros globales de la sesión ---
+tickers_str = st.session_state.get("global_tickers", "KO, PEP")
+tickers = [t.strip().upper() for t in tickers_str.split(",") if t.strip()]
+start = st.session_state.get("global_start")
+end = st.session_state.get("global_end")
+
+if not tickers:
+    st.error("Introduce al menos un ticker en la barra lateral.")
+    st.stop()
+
+# --- Parámetros específicos de esta página ---
 with st.sidebar:
-    tickers = st.text_input("Tickers", ", ".join(DEFAULT_TICKERS)).split(",")
-    tickers = [t.strip().upper() for t in tickers]
+    st.markdown("---")
+    st.subheader("🎛️ Parámetros GARCH")
     ticker = st.selectbox("Ticker a modelar", tickers)
     p = st.slider("Orden ARCH (p)", 1, 3, 1)
     q = st.slider("Orden GARCH (q)", 1, 3, 1)
     vol = st.selectbox("Tipo de modelo", ["Garch", "EGARCH", "GJR-GARCH"])
     dist = st.selectbox("Distribución", ["normal", "t", "skewt", "ged"])
-    run = st.button("🚀 Ejecutar GARCH", type="primary")
+    run = st.button("🚀 Ejecutar GARCH", type="primary", use_container_width=True)
 
 if run:
     with st.spinner("Descargando datos..."):
-        prices = load_prices(tickers, st.session_state.get("global_start"), st.session_state.get("global_end"))
+        prices = load_prices(tickers, start, end)
         returns = np.log(prices[ticker] / prices[ticker].shift(1)).dropna()
 
     with st.spinner("Ajustando modelo..."):
