@@ -1,4 +1,4 @@
- """Descarga y gestión de datos de mercado."""
+"""Descarga y gestión de datos de mercado."""
 from __future__ import annotations
 
 from datetime import date
