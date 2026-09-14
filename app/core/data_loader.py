@@ -29,7 +29,7 @@ def load_prices(
         end: Fecha de fin.
         field: Columna a extraer ('Adj Close' o 'Close').
         missing_policy: Cómo tratar los NaN tras alinear:
-            - 'ffill': rellena hacia delante (asume continuidad del precio).
+            - 'ffill': rellena hacia delante.
             - 'drop':  elimina cualquier fila con NaN.
             - 'raise': lanza ValueError si hay NaN.
 
