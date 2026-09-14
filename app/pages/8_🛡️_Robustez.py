@@ -47,6 +47,8 @@ with st.sidebar:
         ["Momentum", "Mean Reversion", "Pairs Trading (spread)"],
     )
 
+    t2: str | None
+
     if strategy == "Pairs Trading (spread)":
         if len(tickers) < 2:
             callout("Pairs Trading requiere al menos 2 tickers.", variant="warning")
@@ -59,10 +61,7 @@ with st.sidebar:
 
     st.markdown("**Parámetros base**")
     window = st.slider("Ventana", 20, 200, 60, 5)
-    if strategy != "Momentum":
-        entry = st.slider("Umbral entrada", 0.5, 3.0, 2.0, 0.1)
-    else:
-        entry = None
+    entry = st.slider("Umbral entrada", 0.5, 3.0, 2.0, 0.1) if strategy != "Momentum" else None
 
     st.markdown("**Walk-forward**")
     train_size = st.slider("Train", 200, 1000, 504, 21)
@@ -184,6 +183,7 @@ if run:
             st.stop()
 
     with st.spinner("Analizando sensibilidad..."):
+        variations: list[float]
         if strategy == "Momentum":
             variations = [max(5, window - 30), max(5, window - 15),
                           window, window + 15, window + 30]
@@ -193,6 +193,7 @@ if run:
                 metric="sharpe",
             )
         else:
+            assert entry is not None, "entry solo es None cuando strategy == 'Momentum'"
             variations = [max(0.5, entry - 0.5), max(0.5, entry - 0.25),
                           entry, entry + 0.25, entry + 0.5]
             sens = parameter_sensitivity(
