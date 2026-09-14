@@ -11,3 +11,20 @@ enableCORS = false
 
 [browser]
 gatherUsageStats = false
+[theme]
+primaryColor = "#1f77b4"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f0f2f6"
+textColor = "#262730"
+font = "sans serif"
+
+[server]
+headless = true
+enableCORS = false
+
+[browser]
+gatherUsageStats = false
+
+[app]
+# Modo local: permite el botón de cierre. En producción, poner a "false".
+local_mode = true
