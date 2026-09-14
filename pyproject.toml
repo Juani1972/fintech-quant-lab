@@ -1,6 +1,6 @@
 [project]
 name = "fintech-quant-lab"
-version = "0.3.0"
+version = "0.4.0"
 description = "Plataforma de análisis cuantitativo de series temporales financieras"
 readme = "README.md"
 requires-python = ">=3.10"
