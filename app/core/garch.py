@@ -9,8 +9,8 @@ import pandas as pd
 from arch import arch_model
 from arch.univariate.base import ARCHModelResult
 
-
 VolType = Literal["Garch", "EGARCH", "GJR-GARCH"]
+ArchVolType = Literal["GARCH", "ARCH", "EGARCH", "FIGARCH", "APARCH", "HARCH"]
 DistType = Literal["normal", "t", "skewt", "ged"]
 
 
@@ -52,10 +52,20 @@ def fit_garch(
     if rescale:
         series = series * 100
 
+    # GJR-GARCH no es un valor de `vol` propio en la librería `arch`: se
+    # consigue con vol="GARCH" + o=1 (término de asimetría/leverage).
+    if vol == "GJR-GARCH":
+        arch_vol: ArchVolType = "GARCH"
+        o = 1
+    else:
+        arch_vol = cast(ArchVolType, "GARCH" if vol == "Garch" else vol)
+        o = 0
+
     model = arch_model(
         series,
-        vol=cast(VolType, vol),
+        vol=arch_vol,
         p=p,
+        o=o,
         q=q,
         dist=cast(DistType, dist),
     )
