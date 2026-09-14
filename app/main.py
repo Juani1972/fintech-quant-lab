@@ -61,18 +61,30 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # --------------------------------------------------------
-    #  Botón de cierre de la aplicación
-    # --------------------------------------------------------
-    if st.button(
-        "🚪 Cerrar aplicación",
-        type="secondary",
-        use_container_width=True,
-        help="Detiene el servidor Streamlit y cierra la aplicación.",
-    ):
-        st.warning("Cerrando Fintech Quant Lab... El servidor se detendrá en unos segundos.")
-        # Enviar señal de terminación al propio proceso de Streamlit
-        os.kill(os.getpid(), signal.SIGTERM)
+  
+
+# --------------------------------------------------------
+#  Botón de cierre (solo en modo local)
+# --------------------------------------------------------
+import os
+import signal
+
+LOCAL_MODE = os.getenv("FQL_LOCAL_MODE", "true").lower() == "true"
+
+with st.sidebar:
+    st.markdown("---")
+    if LOCAL_MODE:
+        if st.button(
+            "🚪 Cerrar aplicación",
+            type="secondary",
+            use_container_width=True,
+            help="Detiene el servidor Streamlit. Solo disponible en modo local.",
+        ):
+            st.warning("Cerrando Fintech Quant Lab...")
+            os.kill(os.getpid(), signal.SIGTERM)
+    else:
+        st.caption("🔒 Botón de cierre deshabilitado (modo producción).")
+
 
 # ============================================================
 #  Contenido principal
