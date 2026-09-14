@@ -9,7 +9,6 @@ from app.core.cointegration import engle_granger
 from app.core.data_loader import load_prices
 from app.core.robustness import (
     monte_carlo_bootstrap,
-    monte_carlo_gbm,
     parameter_sensitivity,
     robustness_score,
 )
@@ -59,6 +58,8 @@ with st.sidebar:
     window = st.slider("Ventana", 20, 200, 60, 5)
     if strategy != "Momentum":
         entry = st.slider("Umbral entrada", 0.5, 3.0, 2.0, 0.1)
+    else:
+        entry = None
 
     st.markdown("**Walk-forward**")
     train_size = st.slider("Train", 200, 1000, 504, 21)
@@ -79,7 +80,6 @@ if run:
             st.error(f"Error al cargar datos: {e}")
             st.stop()
 
-    # --- Preparar serie y factorías ---
     if strategy == "Pairs Trading (spread)":
         try:
             coint = engle_granger(prices[t1], prices[t2])
@@ -147,9 +147,6 @@ if run:
 
         base_params = {"window": window, "entry": entry}
 
-    # ============================================================
-    #  1. Walk-forward
-    # ============================================================
     with st.spinner("Ejecutando walk-forward..."):
         try:
             wf = walk_forward_analysis(
@@ -166,10 +163,6 @@ if run:
     oos_sharpe = wf.oos_metrics_agg.get("sharpe", np.nan)
     n_trades = wf.oos_metrics_agg.get("n_trades", 0)
 
-    # ============================================================
-    #  2. Monte Carlo
-    # ============================================================
-    # Usamos los retornos de la estrategia OOS compuesta
     oos_returns = wf.oos_equity_concat.pct_change().dropna()
     if len(oos_returns) < 10:
         st.warning("Pocos retornos OOS para Monte Carlo fiable.")
@@ -186,9 +179,6 @@ if run:
             st.error(f"Error en Monte Carlo: {e}")
             st.stop()
 
-    # ============================================================
-    #  3. Sensibilidad de parámetros
-    # ============================================================
     with st.spinner("Analizando sensibilidad..."):
         if strategy == "Momentum":
             variations = [max(5, window - 30), max(5, window - 15),
@@ -207,9 +197,6 @@ if run:
                 metric="sharpe",
             )
 
-    # ============================================================
-    #  4. Score agregado
-    # ============================================================
     report = robustness_score(
         is_sharpe=is_sharpe,
         oos_sharpe=oos_sharpe,
@@ -218,9 +205,6 @@ if run:
         n_trades=int(n_trades),
     )
 
-    # ============================================================
-    #  Visualización
-    # ============================================================
     st.subheader("🎯 Robustness Score")
     c1, c2 = st.columns([1, 3])
     with c1:
@@ -236,7 +220,6 @@ if run:
 
     st.markdown("---")
 
-    # --- Walk-forward resumen ---
     st.subheader("📊 Walk-Forward (IS vs OOS)")
     wf_df = pd.DataFrame({
         "In-Sample": [
@@ -252,7 +235,6 @@ if run:
     }, index=["Sharpe", "Return total", "Max DD"])
     st.dataframe(wf_df, use_container_width=True)
 
-    # --- Monte Carlo ---
     st.subheader("🎲 Monte Carlo (distribución del Sharpe OOS)")
     fig = go.Figure()
     fig.add_trace(go.Histogram(
@@ -283,7 +265,6 @@ if run:
     prob_positive = float((mc.distribution > 0).mean())
     st.metric("P(Sharpe simulado > 0)", f"{prob_positive:.1%}")
 
-    # --- Sensibilidad ---
     st.subheader(f"📉 Sensibilidad de `{sens.param_name}`")
     fig_s = px.line(
         sens.variations, x="value", y="sharpe",
@@ -299,7 +280,6 @@ if run:
         "Busca una meseta alrededor del valor base, no un pico aislado."
     )
 
-    # --- Descargas ---
     st.markdown("---")
     st.subheader("⬇️ Descargas")
     c1, c2, c3 = st.columns(3)
