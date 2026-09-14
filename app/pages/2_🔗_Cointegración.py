@@ -107,6 +107,16 @@ if run:
     section(f"📌 Detalle del par {t1} / {t2}")
     result = engle_granger(prices[t1], prices[t2])
 
+    callout(
+        "⚠️ Alpha y beta se estiman con toda la muestra mostrada (incluido "
+        "el propio periodo donde luego se generan señales) — es un ajuste "
+        "in-sample habitual en el análisis exploratorio, pero optimista "
+        "respecto a un uso en producción. Para una validación honesta, "
+        "combina esto con Walk-Forward reestimando el spread solo con el "
+        "tramo de entrenamiento.",
+        variant="warning",
+    )
+
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("p-valor Engle-Granger", f"{result.pvalue:.4f}")
     c2.metric("ADF spread (p)", f"{result.adf_spread_pvalue:.4f}")

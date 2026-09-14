@@ -13,6 +13,7 @@ from app.core.risk import (
     sharpe_ratio,
     sortino_ratio,
     value_at_risk,
+    value_at_risk_cornish_fisher,
     value_at_risk_parametric,
 )
 from app.state import ensure_session_initialized, get_global_params
@@ -56,14 +57,20 @@ if run:
     returns = compute_log_returns(prices)[ticker]
 
     section("📉 VaR y Expected Shortfall")
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric(f"VaR hist. {confidence:.0%}", f"{value_at_risk(returns, confidence):.4%}")
     c2.metric(
         f"VaR param. {confidence:.0%}",
         f"{value_at_risk_parametric(returns, confidence):.4%}",
     )
-    c3.metric(f"ES hist. {confidence:.0%}", f"{expected_shortfall(returns, confidence):.4%}")
-    c4.metric(
+    c3.metric(
+        f"VaR Cornish-Fisher {confidence:.0%}",
+        f"{value_at_risk_cornish_fisher(returns, confidence):.4%}",
+        help="VaR paramétrico ajustado por la asimetría y curtosis "
+             "reales de los retornos, en vez de asumir normalidad pura.",
+    )
+    c4.metric(f"ES hist. {confidence:.0%}", f"{expected_shortfall(returns, confidence):.4%}")
+    c5.metric(
         f"ES param. {confidence:.0%}",
         f"{expected_shortfall_parametric(returns, confidence):.4%}",
     )

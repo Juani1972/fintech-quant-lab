@@ -6,6 +6,7 @@ import streamlit as st
 
 from app.core.backtest import (
     BacktestResult,
+    benchmark_metrics,
     buy_and_hold,
     run_backtest,
 )
@@ -274,6 +275,25 @@ if run:
                           title=f"{strategy} vs Buy & Hold ({ticker_a})"),
         use_container_width=True,
     )
+
+    section("📐 Métricas relativas al benchmark")
+    try:
+        bm = benchmark_metrics(result.equity_curve, bh)
+        bc1, bc2, bc3, bc4 = st.columns(4)
+        bc1.metric("Beta", f"{bm['beta']:.2f}")
+        bc2.metric("Alpha de Jensen (anual)", f"{bm['jensen_alpha']:.2%}")
+        bc3.metric("Tracking error (anual)", f"{bm['tracking_error']:.2%}")
+        bc4.metric("Information ratio", f"{bm['information_ratio']:.2f}")
+        callout(
+            "Beta mide la exposición al Buy & Hold; alpha de Jensen es el "
+            "exceso de retorno que NO se explica solo por esa exposición. "
+            "Information ratio es el equivalente al Sharpe pero usando el "
+            "benchmark como referencia en vez de 0.",
+            variant="info",
+        )
+    except ValueError as e:
+        callout(f"No se pudieron calcular las métricas de benchmark: {e}",
+                variant="info")
 
     col_dd, col_pos = st.columns(2)
     with col_dd:
