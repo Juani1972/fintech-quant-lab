@@ -8,7 +8,7 @@ import plotly.graph_objects as go
 def line_chart(series: pd.Series, title: str, ylabel: str = "", color: str = "#1f77b4") -> go.Figure:
     """Gráfico de línea simple."""
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=series.index, y=series.values, mode="lines", line=dict(color=color)))
+    fig.add_trace(go.Scatter(x=series.index, y=series.values, mode="lines", line={"color": color}))
     fig.update_layout(title=title, yaxis_title=ylabel, template="plotly_white", height=400)
     return fig
 
@@ -27,6 +27,6 @@ def zscore_chart(zscore: pd.Series, entry: float = 2.0) -> go.Figure:
 def drawdown_chart(dd: pd.Series, title: str = "Drawdown") -> go.Figure:
     """Gráfico de drawdown."""
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=dd.index, y=dd.values, fill="tozeroy", line=dict(color="crimson")))
+    fig.add_trace(go.Scatter(x=dd.index, y=dd.values, fill="tozeroy", line={"color": "crimson"}))
     fig.update_layout(title=title, yaxis_title="Drawdown", template="plotly_white", height=400)
     return fig
