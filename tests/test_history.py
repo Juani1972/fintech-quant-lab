@@ -1,10 +1,14 @@
 """Tests del módulo de histórico SQLite."""
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from app.core.history import (
+    HIGHER_IS_BETTER,
+    LOWER_IS_BETTER,
     clear_all,
+    compare_runs,
     count_runs,
     delete_run,
     get_run,
@@ -25,7 +29,6 @@ def _setup_db(db_path: Path):
     """Inicializa la DB antes de cada test."""
     init_db(db_path)
     yield
-    # Limpieza no necesaria: tmp_path se borra solo
 
 
 def _make_entry(**overrides):
@@ -43,8 +46,10 @@ def _make_entry(**overrides):
     return base
 
 
+# ============================================================
+#  CRUD básico
+# ============================================================
 def test_init_db_idempotent(db_path: Path):
-    """Llamar init_db varias veces no debe fallar."""
     init_db(db_path)
     init_db(db_path)
     assert count_runs(db_path) == 0
@@ -75,7 +80,6 @@ def test_list_runs_order_desc(db_path: Path):
 
     entries = list_runs(db_path=db_path)
     assert len(entries) == 2
-    # El más reciente primero
     assert entries[0].id == id2
     assert entries[1].id == id1
 
@@ -128,7 +132,6 @@ def test_save_rejects_empty_tickers(db_path: Path):
 
 
 def test_params_json_roundtrip(db_path: Path):
-    """Params complejos deben sobrevivir el roundtrip JSON."""
     params = {
         "window": 60,
         "entry": 2.0,
@@ -141,3 +144,103 @@ def test_params_json_roundtrip(db_path: Path):
 
 def test_get_nonexistent_returns_none(db_path: Path):
     assert get_run(9999, db_path=db_path) is None
+
+
+# ============================================================
+#  compare_runs
+# ============================================================
+def test_compare_runs_requires_two(db_path: Path):
+    run_id = save_run(**_make_entry(), db_path=db_path)
+    with pytest.raises(ValueError, match="al menos 2"):
+        compare_runs([run_id], db_path=db_path)
+
+
+def test_compare_runs_nonexistent(db_path: Path):
+    id1 = save_run(**_make_entry(), db_path=db_path)
+    with pytest.raises(ValueError, match="no existe"):
+        compare_runs([id1, 9999], db_path=db_path)
+
+
+def test_compare_runs_basic(db_path: Path):
+    id1 = save_run(
+        **_make_entry(metrics={"sharpe": 1.0, "max_drawdown": -0.10}),
+        db_path=db_path,
+    )
+    id2 = save_run(
+        **_make_entry(metrics={"sharpe": 1.5, "max_drawdown": -0.05}),
+        db_path=db_path,
+    )
+
+    comp = compare_runs([id1, id2], db_path=db_path)
+
+    assert len(comp.entries) == 2
+    assert comp.metrics_table.shape[0] >= 2  # al menos sharpe y max_drawdown
+    assert id1 in comp.metrics_table.columns
+    assert id2 in comp.metrics_table.columns
+
+
+def test_compare_runs_best_per_metric(db_path: Path):
+    id1 = save_run(**_make_entry(metrics={"sharpe": 1.0}), db_path=db_path)
+    id2 = save_run(**_make_entry(metrics={"sharpe": 1.5}), db_path=db_path)
+
+    comp = compare_runs([id1, id2], db_path=db_path)
+
+    # Sharpe más alto (id2) es el mejor
+    assert comp.best_per_metric["sharpe"] == id2
+    assert comp.worst_per_metric["sharpe"] == id1
+
+
+def test_compare_runs_lower_is_better(db_path: Path):
+    id1 = save_run(**_make_entry(metrics={"turnover": 5.0}), db_path=db_path)
+    id2 = save_run(**_make_entry(metrics={"turnover": 10.0}), db_path=db_path)
+
+    comp = compare_runs([id1, id2], db_path=db_path)
+
+    # Turnover bajo (id1) es mejor
+    assert comp.best_per_metric["turnover"] == id1
+    assert comp.worst_per_metric["turnover"] == id2
+
+
+def test_compare_runs_max_drawdown_direction(db_path: Path):
+    """Menos negativo (-5%) es mejor que más negativo (-20%)."""
+    id1 = save_run(**_make_entry(metrics={"max_drawdown": -0.20}), db_path=db_path)
+    id2 = save_run(**_make_entry(metrics={"max_drawdown": -0.05}), db_path=db_path)
+
+    comp = compare_runs([id1, id2], db_path=db_path)
+
+    assert comp.best_per_metric["max_drawdown"] == id2
+    assert comp.worst_per_metric["max_drawdown"] == id1
+
+
+def test_compare_runs_params_table(db_path: Path):
+    id1 = save_run(**_make_entry(params={"window": 30}), db_path=db_path)
+    id2 = save_run(**_make_entry(params={"window": 60}), db_path=db_path)
+
+    comp = compare_runs([id1, id2], db_path=db_path)
+
+    assert "window" in comp.params_table.index
+    assert comp.params_table.at["window", id1] == 30
+    assert comp.params_table.at["window", id2] == 60
+
+
+def test_compare_runs_handles_missing_metrics(db_path: Path):
+    """Si un run tiene menos métricas, las ausentes deben ser NaN, no error."""
+    id1 = save_run(
+        **_make_entry(metrics={"sharpe": 1.0, "extra": 42}),
+        db_path=db_path,
+    )
+    id2 = save_run(
+        **_make_entry(metrics={"sharpe": 1.5}),
+        db_path=db_path,
+    )
+
+    comp = compare_runs([id1, id2], db_path=db_path)
+
+    # "extra" solo existe en id1 → id2 debe ser NaN
+    assert "extra" in comp.metrics_table.index
+    assert pd.isna(comp.metrics_table.at["extra", id2])
+
+
+def test_constants_are_disjoint():
+    """Un mismo metric no puede estar en ambas categorías."""
+    assert HIGHER_IS_BETTER.isdisjoint(LOWER_IS_BETTER)
