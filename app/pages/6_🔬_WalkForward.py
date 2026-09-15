@@ -37,12 +37,11 @@ if len(tickers) < 1:
 with st.sidebar:
     st.markdown("---")
     st.markdown("## 🎛️ Configuración Walk-Forward")
+
     strategy = st.selectbox(
         "Estrategia",
         ["Pairs Trading (spread)", "Momentum", "Mean Reversion"],
     )
-
-    t2: str | None
 
     if strategy == "Pairs Trading (spread)":
         if len(tickers) < 2:
@@ -82,12 +81,15 @@ if run:
             callout(f"Error calculando cointegración: {e}", variant="danger")
             st.stop()
         generator = signal_from_pairs_trading(window=60, entry=2.0, exit_=0.5)
+        wf_mode = "absolute"
     elif strategy == "Momentum":
         series = prices[t1]
         generator = signal_from_momentum(window=60)
+        wf_mode = "percent"
     else:
         series = prices[t1]
         generator = signal_from_mean_reversion(window=30, entry=1.5, exit_=0.5)
+        wf_mode = "percent"
 
     with st.spinner("Ejecutando walk-forward..."):
         try:
@@ -100,6 +102,7 @@ if run:
                 initial_capital=initial_capital,
                 commission=commission,
                 slippage=slippage,
+                mode=wf_mode,
             )
         except ValueError as e:
             callout(f"Error en el walk-forward: {e}", variant="danger")
