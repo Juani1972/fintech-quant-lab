@@ -1,0 +1,76 @@
+Arreglo de las 4 regresiones — Fintech Quant Lab
+===================================================
+
+Tu refactor del modo "absolute" resolvió bien el bug original (Pairs
+Trading con spreads que cruzan cero), pero de camino se perdieron 4
+funcionalidades que ya habíamos construido en rondas anteriores. Este
+zip las repone SIN tocar tu trabajo del modo absolute (que se queda
+tal cual lo hiciste, solo optimizado).
+
+RUTAS (todos SOBRESCRIBEN el archivo existente del mismo nombre):
+
+  app/backtest.py          -> va en app/core/backtest.py
+  app/robustness.py        -> va en app/core/robustness.py
+  app/walkforward.py       -> va en app/core/walkforward.py
+  app/pages/5_🧪_Backtest.py       -> app/pages/
+  app/pages/6_🔬_WalkForward.py    -> app/pages/
+  app/pages/8_🛡️_Robustez.py       -> app/pages/
+  pyproject.toml           -> raíz del repo
+  tests/test_backtest.py   -> tests/
+
+QUÉ SE ARREGLÓ:
+
+1. app/core/backtest.py
+   - _extract_trades vuelve a ser O(n) en vez de O(n²) (se había
+     reintroducido el recálculo de equity en cada iteración del bucle).
+     Verificado: 0.017-0.05s con 3000 barras (había vuelto a 0.325s).
+   - benchmark_metrics() repuesta entera (beta, alpha de Jensen,
+     tracking error, information ratio) — había desaparecido del todo.
+   - Fix de tipos: params del BacktestResult, y entry_price en
+     _extract_trades (mypy limpio).
+
+2. app/core/robustness.py
+   - robustness_score() vuelve a aceptar el parámetro `weights`
+     (antes: pesos 30/30/25/15 hardcodeados otra vez).
+   - robustness_score_weight_sensitivity() repuesta entera — se había
+     borrado la función completa.
+
+3. app/core/walkforward.py
+   - Parámetro `embargo` repuesto en walk_forward_analysis (con
+     n_windows_skipped y logging de las ventanas descartadas).
+
+4. Páginas 5, 6 y 8
+   - Repuestas las anotaciones de tipo (ticker_b/entry/exit_/t2 como
+     str|None / float|None) y los `assert` que las acompañan — se
+     habían vuelto a perder, mismo patrón que ya se había arreglado
+     dos veces antes en este proyecto.
+   - Página 5: repuesta la sección visual "Métricas relativas al
+     benchmark" (estaba solo el import, sin la UI).
+   - Tipado correcto de bt_mode/wf_mode/robustness_mode como
+     BacktestMode (Literal) en vez de str.
+
+5. pyproject.toml
+   - Repuesta la excepción de ruff para notebooks (B018) que también
+     se había perdido.
+
+6. tests/test_backtest.py
+   - Repuestos los 3 tests de benchmark_metrics (beta con
+     apalancamiento conocido, tracking_error=0 cuando estrategia y
+     benchmark son idénticos, rechazo de benchmark sin varianza).
+
+VERIFICACIÓN (las 4 capas juntas, sin parches):
+  - python -m compileall -q app/ tests/ notebooks/  -> OK
+  - ruff check app/ tests/ notebooks/                -> All checks passed!
+  - mypy app/ --ignore-missing-imports               -> Success: no issues found
+  - pytest tests/ -v                                 -> 170 passed (antes 167,
+    y antes de este arreglo: colección rota, 0 tests ejecutados)
+
+Y el escenario original del bug, probado de nuevo end-to-end con datos
+sintéticos de un par cointegrado realista: 60 trades, 0.017s, sin error.
+
+RECOMENDACIÓN: dado que esto ya ha pasado 2-3 veces con archivos
+grandes (backtest.py, robustness.py, walkforward.py, las páginas),
+cuando pidas ayuda externa para modificar uno de estos archivos,
+pega el contenido ACTUAL completo como referencia en vez de solo
+describir el cambio que quieres — así quien te ayude parte de la
+versión real, no de una snapshot antigua.
