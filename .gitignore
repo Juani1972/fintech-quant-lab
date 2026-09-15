@@ -16,3 +16,6 @@ build/
 data/*.csv
 data/*.parquet
 .streamlit/secrets.toml
+# Base de datos local de histórico
+data/*.db
+data/*.db-journal
