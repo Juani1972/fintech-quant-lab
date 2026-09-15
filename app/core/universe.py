@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from typing import Final
 
-
 UNIVERSES: Final[dict[str, list[str]]] = {
     "Pares clásicos (cointegración)": [
         "KO", "PEP", "XOM", "CVX", "V", "MA", "GLD", "SLV", "GOLD", "NEM",
