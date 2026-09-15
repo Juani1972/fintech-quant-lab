@@ -24,11 +24,12 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 # ============================================================
 #  Configuración
@@ -70,7 +71,7 @@ class HistoryEntry:
     notes: str | None
 
     @classmethod
-    def from_row(cls, row: sqlite3.Row) -> "HistoryEntry":
+    def from_row(cls, row: sqlite3.Row) -> HistoryEntry:
         """Construye una entrada desde una fila de SQLite."""
         return cls(
             id=row["id"],
@@ -155,6 +156,7 @@ def save_run(
                 notes,
             ),
         )
+        assert cur.lastrowid is not None, "lastrowid tras un INSERT exitoso nunca es None"
         return int(cur.lastrowid)
 
 
