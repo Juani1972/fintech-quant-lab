@@ -14,6 +14,7 @@ from app.config import (
     DEFAULT_TICKERS,
     PAGES,
 )
+from app.core.universe import list_universes, universe_to_string
 from app.styles import (
     callout,
     footer,
@@ -38,6 +39,20 @@ if "global_start" not in st.session_state:
 if "global_end" not in st.session_state:
     st.session_state["global_end"] = DEFAULT_END
 
+
+# ============================================================
+#  Callback: al cambiar de universo, rellenar el campo de tickers
+# ============================================================
+def _on_universe_change() -> None:
+    """Rellena `global_tickers` con los tickers del universo seleccionado."""
+    name = st.session_state.get("_universe_select", "(personalizado)")
+    if name == "(personalizado)":
+        return
+    tickers_str = universe_to_string(name)
+    if tickers_str:
+        st.session_state["global_tickers"] = tickers_str
+
+
 # ============================================================
 #  Sidebar: parámetros globales
 # ============================================================
@@ -45,12 +60,26 @@ with st.sidebar:
     st.markdown("## ⚙️ Parámetros globales")
     st.caption("Compartidos entre todas las páginas.")
 
+    # --- Selector de universo ---
+    st.selectbox(
+        "Universo rápido",
+        ["(personalizado)", *list_universes()],
+        key="_universe_select",
+        on_change=_on_universe_change,
+        help=(
+            "Elige un universo predefinido para rellenar el campo de tickers. "
+            "Después puedes editarlo libremente."
+        ),
+    )
+
+    # --- Campo de tickers (siempre visible, editable) ---
     st.text_input(
         "Tickers (separados por coma)",
         key="global_tickers",
         help="Ejemplo: AAPL, MSFT, KO, PEP",
     )
 
+    # --- Rango de fechas ---
     col_a, col_b = st.columns(2)
     with col_a:
         st.date_input(
@@ -69,9 +98,7 @@ with st.sidebar:
 
     st.divider()
 
-    # --------------------------------------------------------
-    #  Botón de cierre (solo local)
-    # --------------------------------------------------------
+    # --- Botón de cierre (solo local) ---
     LOCAL_MODE = os.getenv("FQL_LOCAL_MODE", "true").lower() == "true"
     if LOCAL_MODE:
         if st.button(
@@ -84,6 +111,7 @@ with st.sidebar:
             os.kill(os.getpid(), signal.SIGTERM)
     else:
         st.caption("🔒 Botón de cierre deshabilitado (modo producción).")
+
 
 # ============================================================
 #  Hero
@@ -108,7 +136,11 @@ fecha_ini = st.session_state.get("global_start", DEFAULT_START)
 fecha_fin = st.session_state.get("global_end", DEFAULT_END)
 
 n_tickers = len([t for t in tickers_actuales.split(",") if t.strip()])
-dias = (fecha_fin - fecha_ini).days if isinstance(fecha_ini, date) and isinstance(fecha_fin, date) else 0
+dias = (
+    (fecha_fin - fecha_ini).days
+    if isinstance(fecha_ini, date) and isinstance(fecha_fin, date)
+    else 0
+)
 
 cols = st.columns(4)
 with cols[0]:
@@ -132,7 +164,6 @@ st.caption(
     "Los parámetros globales (tickers y fechas) se aplican a todos."
 )
 
-# Grid de tarjetas: 2 columnas
 for i in range(0, len(PAGES), 2):
     cols = st.columns(2, gap="medium")
     with cols[0]:
