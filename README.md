@@ -10,7 +10,7 @@
 
 **Plataforma de análisis cuantitativo** para series temporales financieras:
 volatilidad, cointegración, factores, riesgo, backtesting, walk-forward,
-optimización y análisis de robustez.
+optimización, robustez y un histórico persistente de resultados.
 
 > **Nota**: Este proyecto es educativo y de investigación. No constituye
 > asesoramiento financiero. Ver [Disclaimer](#-disclaimer).
@@ -33,26 +33,46 @@ Accede en **http://localhost:8501**.
 
 ## 📸 Capturas
 
-### Dashboard principal
+> Las imágenes de esta sección están generadas con `matplotlib` a partir de
+> **cálculos reales** de `app.core` sobre un par de tickers sintético
+> (no hay conexión a internet en el entorno donde se generaron) — no son
+> capturas de pantalla de la app Streamlit en sí. Reflejan fielmente qué
+> calcula y muestra cada página, pero no su maquetación exacta. Puedes
+> regenerarlas con `python docs/screenshots/generate_mockups.py`, o
+> sustituirlas por capturas reales de tu propia instancia (ver
+> `docs/screenshots/README.md`).
+
+### Portada
 ![Dashboard](docs/screenshots/01_dashboard.png)
 
-### Análisis GARCH con diagnósticos de residuos
+### GARCH — volatilidad condicional y diagnósticos de residuos
 ![GARCH](docs/screenshots/02_garch.png)
 
-### Cointegración y pairs trading
+### Cointegración — spread, half-life y z-score causal
 ![Cointegración](docs/screenshots/03_cointegration.png)
 
-### Backtesting con curva de capital
-![Backtest](docs/screenshots/04_backtest.png)
+### Fama-French — regresión de factores con errores HAC
+*(factores sintéticos en esta maqueta — `load_factors` real descarga de
+Kenneth French, sin red en este entorno)*
+![Fama-French](docs/screenshots/04_famafrench.png)
 
-### Walk-forward (IS vs OOS)
-![Walk-Forward](docs/screenshots/05_walkforward.png)
+### Riesgo — VaR, Expected Shortfall y drawdown
+![Riesgo](docs/screenshots/05_risk.png)
 
-### Robustness score y Monte Carlo
-![Robustez](docs/screenshots/06_robustness.png)
+### Backtest — equity curve, Sharpe y métricas de benchmark
+![Backtest](docs/screenshots/06_backtest.png)
 
-> 📌 Para añadir tus propias capturas, guarda los PNG en
-> `docs/screenshots/` y actualiza los enlaces anteriores.
+### Walk-Forward — Sharpe IS vs OOS y equity concatenada
+![Walk-Forward](docs/screenshots/07_walkforward.png)
+
+### Optimización — heatmap de sensibilidad del grid search
+![Optimización](docs/screenshots/08_optimization.png)
+
+### Robustez — Monte Carlo, robustness score y pesos
+![Robustez](docs/screenshots/09_robustness.png)
+
+### Histórico — backtests guardados en SQLite
+![Histórico](docs/screenshots/10_historico.png)
 
 ---
 
@@ -60,25 +80,48 @@ Accede en **http://localhost:8501**.
 
 ### Análisis estadístico
 - **📈 GARCH / EGARCH / GJR-GARCH**: volatilidad condicional con
-  diagnósticos de residuos (Ljung-Box, ARCH-LM, Jarque-Bera) y
-  condiciones de estacionariedad por modelo.
+  diagnósticos de residuos (Ljung-Box, ARCH-LM, Jarque-Bera), control de
+  convergencia del optimizador y pronóstico en las unidades originales
+  de los retornos.
 - **🔗 Cointegración**: Engle-Granger, ADF del spread, half-life, z-score
-  causal. **Corrección por múltiples tests** (Bonferroni, Benjamini-Hochberg).
+  causal. Estimación de α/β solo con el tramo de entrenamiento
+  (`fit_until`) para evitar ajuste in-sample. **Corrección por múltiples
+  tests** (Bonferroni, Benjamini-Hochberg).
 - **📊 Fama-French**: regresión de 3 y 5 factores con **errores estándar
   HAC (Newey-West)** y interpretación de alpha.
 
+### Riesgo
+- **⚠️ Riesgo**: VaR histórico, paramétrico, **Cornish-Fisher** (ajustado
+  por asimetría y curtosis) y de **simulación histórica filtrada** (FHS,
+  usa la volatilidad condicional de un modelo GARCH ya ajustado);
+  Expected Shortfall, drawdown, Sharpe, Sortino, Calmar.
+
 ### Backtesting y validación
-- **🧪 Backtesting**: motor vectorizado con anti-look-ahead, comisión,
-  slippage, benchmark y métricas completas.
-- **🔬 Walk-forward**: validación IS/OOS por ventanas sucesivas.
-- **🎯 Optimización**: grid search evaluado con walk-forward (evita overfitting).
-- **🛡️ Robustez**: Monte Carlo, block bootstrap, sensibilidad de parámetros,
-  robustness score 0-100.
+- **🧪 Backtesting**: motor vectorizado O(n) con anti-look-ahead,
+  comisión, slippage, dos modos de P&L (`percent` para precios,
+  `absolute` para spreads que cruzan cero — p. ej. pairs trading) y
+  métricas frente a benchmark (beta, alpha de Jensen, tracking error,
+  information ratio).
+- **🔬 Walk-forward**: validación IS/OOS por ventanas sucesivas, con
+  parámetro de **embargo** opcional entre train y test.
+- **🎯 Optimización**: grid search evaluado con walk-forward y
+  **Deflated Sharpe Ratio** (Bailey & López de Prado) para corregir el
+  sesgo de selección múltiple del "mejor" resultado del grid.
+- **🛡️ Robustez**: Monte Carlo (GBM y block bootstrap), sensibilidad de
+  parámetros, robustness score 0-100 con **pesos parametrizables** y
+  análisis de cuánto depende el score del esquema de pesos elegido.
+- **📚 Histórico**: cada backtest se puede guardar en SQLite local
+  (tickers, parámetros, métricas) y consultarlo después como un informe
+  de investigación formateado, exportable a Markdown.
 
 ### Interfaz
-- **Streamlit multipágina** con gráficos interactivos (Plotly).
-- **Exportación CSV** en cada página.
-- **Caché de datos** con política de NaNs configurable.
+- **Streamlit multipágina** (9 páginas) con gráficos interactivos (Plotly).
+- **Selector de universos de tickers** predefinidos (pares clásicos,
+  Magnificent 7, sectores SPDR...) además de entrada manual.
+- **Exportación CSV** en cada página, y de informes individuales en
+  Markdown desde el histórico.
+- **Caché de datos** desacoplada de Streamlit (`app/core/cache.py`), con
+  política de NaNs configurable.
 
 ---
 
@@ -89,8 +132,11 @@ pytest tests/ -v
 pytest tests/ --cov=app --cov-report=html   # reporte HTML en htmlcov/
 ```
 
-La cobertura mínima exigida es **60%**. El CI ejecuta los tests en
-Python 3.10, 3.11 y 3.12.
+La suite tiene **171 tests** (incluye mocks de `yfinance`, regresión de
+páginas duplicadas, smoke tests con `AppTest` de Streamlit, y tests
+numéricos con valores teóricos conocidos para VaR, half-life, Deflated
+Sharpe y Cornish-Fisher). Cobertura actual: **~77%**, mínimo exigido por
+CI: **60%**. El CI ejecuta ruff, mypy y pytest en Python 3.10, 3.11 y 3.12.
 
 ---
 
@@ -99,25 +145,30 @@ Python 3.10, 3.11 y 3.12.
 ```
 fintech-quant-lab/
 ├── app/
-│   ├── main.py                 # Punto de entrada
-│   ├── config.py               # Configuración global
-│   ├── core/                   # Lógica de negocio (independiente de UI)
-│   │   ├── data_loader.py      # Descarga y calidad de datos
-│   │   ├── garch.py            # Modelos de volatilidad
-│   │   ├── cointegration.py    # Pairs trading
-│   │   ├── fama_french.py      # Factores con HAC
-│   │   ├── risk.py             # VaR, ES, drawdown, ratios
-│   │   ├── backtest.py         # Motor de backtesting
-│   │   ├── walkforward.py      # Walk-forward analysis
-│   │   ├── optimization.py     # Grid search + WF
-│   │   ├── robustness.py       # Monte Carlo, bootstrap, score
-│   │   ├── multiple_testing.py # Bonferroni, BH
-│   │   └── plotting.py         # Gráficos reutilizables
-│   └── pages/                  # 8 páginas Streamlit
-├── notebooks/                  # Notebooks de ejemplo
-├── tests/                      # Tests unitarios
-├── docs/screenshots/           # Capturas para el README
-├── .github/workflows/          # CI/CD
+│   ├── main.py                 # Punto de entrada (portada)
+│   ├── config.py                # Configuración global, tema, registro de páginas
+│   ├── state.py                 # Parámetros globales de sesión (tickers, fechas)
+│   ├── styles.py                 # Componentes de UI reutilizables (hero, cards...)
+│   ├── core/                    # Lógica de negocio (independiente de Streamlit)
+│   │   ├── cache.py             # Caché desacoplada (único punto de acoplo a st)
+│   │   ├── data_loader.py       # Descarga y calidad de datos (yfinance)
+│   │   ├── universe.py          # Universos predefinidos de tickers
+│   │   ├── garch.py             # GARCH / EGARCH / GJR-GARCH
+│   │   ├── cointegration.py     # Engle-Granger, half-life, señales
+│   │   ├── fama_french.py       # Factores con errores HAC
+│   │   ├── multiple_testing.py  # Bonferroni, Benjamini-Hochberg
+│   │   ├── risk.py              # VaR (histórico/paramétrico/CF/FHS), ES, ratios
+│   │   ├── backtest.py          # Motor de backtesting + benchmark_metrics
+│   │   ├── walkforward.py       # Walk-forward analysis + embargo
+│   │   ├── optimization.py      # Grid search + WF + Deflated Sharpe Ratio
+│   │   ├── robustness.py        # Monte Carlo, bootstrap, robustness score
+│   │   ├── history.py           # Persistencia SQLite de backtests
+│   │   └── plotting.py          # Gráficos reutilizables
+│   └── pages/                   # 9 páginas Streamlit
+├── notebooks/                   # 4 notebooks de ejemplo (jupytext)
+├── tests/                       # Tests unitarios (171)
+├── docs/screenshots/            # Capturas / maquetas para el README
+├── .github/workflows/           # CI/CD
 ├── Dockerfile
 └── docker-compose.yml
 ```
@@ -155,6 +206,10 @@ launch.bat
 docker-compose up --build
 ```
 
+La imagen no instala `build-essential` (hay wheels precompiladas para
+todas las dependencias) y corre como usuario sin privilegios, no como
+root.
+
 ### Opción 4: desarrollo (con tests y notebooks)
 
 ```bash
@@ -167,16 +222,21 @@ jupyter lab notebooks/
 
 ## 📓 Notebooks de ejemplo
 
-En `notebooks/` encontrarás tres flujos reproducibles que usan directamente
-los módulos de `app.core` sin Streamlit:
+En `notebooks/` encontrarás cuatro flujos reproducibles que usan
+directamente los módulos de `app.core` sin Streamlit:
 
 1. **`01_garch_analysis.py`** — GARCH con diagnósticos y pronóstico.
 2. **`02_pairs_trading_backtest.py`** — Cointegración + señales + backtest.
-3. **`03_walkforward_robustness.py`** — Walk-forward + Monte Carlo.
+3. **`03_walkforward_robustness.py`** — Walk-forward + Monte Carlo +
+   sensibilidad + robustness score.
+4. **`04_full_pipeline.py`** — Flujo completo encadenado: datos → GARCH →
+   cointegración → señales → backtest (`mode="absolute"` para el spread)
+   → walk-forward → optimización → Monte Carlo.
 
 Se pueden abrir como notebooks con:
 
 ```bash
+pip install jupytext
 jupytext --to notebook notebooks/01_garch_analysis.py
 ```
 
@@ -184,19 +244,22 @@ jupytext --to notebook notebooks/01_garch_analysis.py
 
 ## 📖 Uso
 
-1. Introduce los **tickers** en la barra lateral (ej: `KO, PEP`).
-2. Selecciona el **rango de fechas**.
+1. Introduce los **tickers** en la barra lateral (ej: `KO, PEP`) o elige
+   un **universo predefinido**.
+2. Selecciona el **rango de fechas** — se comparte entre todas las páginas.
 3. Navega entre páginas:
    - **📈 GARCH** — modelado de volatilidad.
    - **🔗 Cointegración** — pairs trading + multiple testing.
    - **📊 Fama-French** — regresión de factores.
    - **⚠️ Riesgo** — VaR, ES, drawdown, ratios.
-   - **🧪 Backtest** — backtesting de estrategias.
+   - **🧪 Backtest** — backtesting de estrategias (guarda resultados al histórico).
    - **🔬 Walk-Forward** — validación IS/OOS.
-   - **🎯 Optimización** — grid search con WF.
+   - **🎯 Optimización** — grid search con WF + Deflated Sharpe Ratio.
    - **🛡️ Robustez** — Monte Carlo + robustness score.
+   - **📚 Histórico** — consulta, exporta o borra backtests guardados.
 4. Ajusta parámetros y pulsa **Ejecutar**.
-5. Descarga resultados en CSV.
+5. Descarga resultados en CSV, o el informe de una entrada del histórico
+   en Markdown.
 
 ---
 
@@ -239,3 +302,5 @@ independiente.**
 - **Fama-French**: Fama & French (1993, 2015), *Common risk factors*.
 - **Newey-West**: Newey & West (1987), *A Simple, Positive Semi-Definite, Heteroskedasticity and Autocorrelation Consistent Covariance Matrix*.
 - **Benjamini-Hochberg**: Benjamini & Hochberg (1995), *Controlling the False Discovery Rate*.
+- **Deflated Sharpe Ratio**: Bailey & López de Prado (2014), *The Deflated Sharpe Ratio: Correcting for Selection Bias, Backtest Overfitting and Non-Normality*.
+- **Cornish-Fisher**: Cornish & Fisher (1938), *Moments and Cumulants in the Specification of Distributions*.
