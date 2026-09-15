@@ -21,27 +21,4 @@ pip install jupytext
 jupytext --to notebook notebooks/*.py
 
 # O uno solo
-jupytext --to notebook notebooks/01_garch_analysis.py
-```
-
-Después abre el `.ipynb` con Jupyter:
-
-```bash
-jupyter lab notebooks/
-```
-
-## Notebooks disponibles
-
-| Notebook | Contenido |
-|---|---|
-| `01_garch_analysis.py` | GARCH + diagnósticos + pronóstico de volatilidad |
-| `02_pairs_trading_backtest.py` | Cointegración + señales + backtest con costes |
-| `03_walkforward_robustness.py` | Walk-forward + Monte Carlo + robustness score |
-
-## Ejecución como script
-
-```bash
-python notebooks/01_garch_analysis.py
-```
-
-Los resultados se imprimen en consola.
+jupytext --to notebook notebooks/04_full_pipeline.py
