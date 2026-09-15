@@ -117,7 +117,11 @@ Kenneth French, sin red en este entorno)*
 ### Interfaz
 - **Streamlit multipágina** (9 páginas) con gráficos interactivos (Plotly).
 - **Selector de universos de tickers** predefinidos (pares clásicos,
-  Magnificent 7, sectores SPDR...) además de entrada manual.
+  Magnificent 7, sectores SPDR... y 5 mercados internacionales: IBEX 35,
+  DAX 40, CAC 40, FTSE 100, Nikkei 225) además de entrada manual. Ver
+  [docs/MERCADOS.md](docs/MERCADOS.md) para la lista completa de
+  sufijos de bolsa y cómo buscar el ticker de cualquier empresa del
+  mundo.
 - **Exportación CSV** en cada página, y de informes individuales en
   Markdown desde el histórico.
 - **Caché de datos** desacoplada de Streamlit (`app/core/cache.py`), con
