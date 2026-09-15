@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 
 from app.core.backtest import (
+    benchmark_metrics,
     buy_and_hold,
     compare_to_benchmark,
     run_backtest,
@@ -254,3 +255,42 @@ def test_absolute_mode_summary_runs(spread_series):
     result = run_backtest(spread_series, signals, mode="absolute")
     s = result.summary()
     assert "BACKTEST RESULT" in s
+
+
+def test_benchmark_metrics_beta_matches_leverage():
+    """Una 'estrategia' que es el benchmark apalancado 2x debe dar
+    beta ~= 2.
+    """
+    np.random.seed(0)
+    dates = pd.bdate_range("2020-01-01", periods=500)
+    bench_log_returns = np.random.normal(0.0003, 0.01, 500)
+    benchmark = pd.Series(100 * np.exp(np.cumsum(bench_log_returns)), index=dates)
+    strategy = pd.Series(
+        100 * np.exp(np.cumsum(2 * bench_log_returns)), index=dates,
+    )
+
+    m = benchmark_metrics(strategy, benchmark)
+    assert m["beta"] == pytest.approx(2.0, abs=0.05)
+
+
+def test_benchmark_metrics_zero_tracking_error_when_identical():
+    """Si la estrategia es idéntica al benchmark, tracking_error y
+    jensen_alpha deben ser (casi) cero y beta (casi) 1.
+    """
+    np.random.seed(1)
+    dates = pd.bdate_range("2020-01-01", periods=300)
+    prices = pd.Series(
+        100 * np.exp(np.cumsum(np.random.normal(0.0003, 0.01, 300))), index=dates,
+    )
+    m = benchmark_metrics(prices, prices)
+    assert m["beta"] == pytest.approx(1.0, abs=1e-6)
+    assert m["tracking_error"] == pytest.approx(0.0, abs=1e-9)
+    assert m["jensen_alpha"] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_benchmark_metrics_rejects_constant_benchmark():
+    dates = pd.bdate_range("2020-01-01", periods=10)
+    strategy = pd.Series(np.linspace(100, 110, 10), index=dates)
+    flat_benchmark = pd.Series([100.0] * 10, index=dates)
+    with pytest.raises(ValueError, match="varianza"):
+        benchmark_metrics(strategy, flat_benchmark)
