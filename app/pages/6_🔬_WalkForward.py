@@ -4,6 +4,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from app.core.backtest import BacktestMode
 from app.core.cointegration import engle_granger
 from app.core.data_loader import load_prices
 from app.core.walkforward import (
@@ -48,7 +49,7 @@ with st.sidebar:
             callout("Pairs Trading requiere al menos 2 tickers.", variant="warning")
             st.stop()
         t1 = st.selectbox("Ticker 1", tickers, index=0)
-        t2 = st.selectbox("Ticker 2", tickers, index=1)
+        t2: str | None = st.selectbox("Ticker 2", tickers, index=1)
     else:
         t1 = st.selectbox("Ticker", tickers, index=0)
         t2 = None
@@ -81,7 +82,7 @@ if run:
             callout(f"Error calculando cointegración: {e}", variant="danger")
             st.stop()
         generator = signal_from_pairs_trading(window=60, entry=2.0, exit_=0.5)
-        wf_mode = "absolute"
+        wf_mode: BacktestMode = "absolute"
     elif strategy == "Momentum":
         series = prices[t1]
         generator = signal_from_momentum(window=60)

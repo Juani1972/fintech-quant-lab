@@ -5,6 +5,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
+from app.core.backtest import BacktestMode
 from app.core.cointegration import engle_granger
 from app.core.data_loader import load_prices
 from app.core.robustness import (
@@ -53,17 +54,16 @@ with st.sidebar:
             callout("Pairs Trading requiere al menos 2 tickers.", variant="warning")
             st.stop()
         t1 = st.selectbox("Ticker 1", tickers, index=0)
-        t2 = st.selectbox("Ticker 2", tickers, index=1)
+        t2: str | None = st.selectbox("Ticker 2", tickers, index=1)
     else:
         t1 = st.selectbox("Ticker", tickers, index=0)
         t2 = None
 
     st.markdown("**Parámetros base**")
     window = st.slider("Ventana", 20, 200, 60, 5)
-    if strategy != "Momentum":
-        entry = st.slider("Umbral entrada", 0.5, 3.0, 2.0, 0.1)
-    else:
-        entry = None
+    entry: float | None = (
+        st.slider("Umbral entrada", 0.5, 3.0, 2.0, 0.1) if strategy != "Momentum" else None
+    )
 
     st.markdown("**Walk-forward**")
     train_size = st.slider("Train", 200, 1000, 504, 21)
@@ -106,7 +106,7 @@ if run:
             return generate_signals(z, entry=params.get("entry", 2.0), exit_=0.5)
 
         base_params = {"window": window, "entry": entry}
-        robustness_mode = "absolute"
+        robustness_mode: BacktestMode = "absolute"
     elif strategy == "Momentum":
         series = prices[t1]
 
@@ -190,7 +190,7 @@ if run:
 
     with st.spinner("Analizando sensibilidad..."):
         if strategy == "Momentum":
-            variations = [max(5, window - 30), max(5, window - 15),
+            variations: list[float] = [max(5, window - 30), max(5, window - 15),
                           window, window + 15, window + 30]
             sens = parameter_sensitivity(
                 series, simple_factory, base_params,
@@ -199,6 +199,7 @@ if run:
                 mode=robustness_mode,
             )
         else:
+            assert entry is not None, "entry solo es None cuando strategy == 'Momentum'"
             variations = [max(0.5, entry - 0.5), max(0.5, entry - 0.25),
                           entry, entry + 0.25, entry + 0.5]
             sens = parameter_sensitivity(

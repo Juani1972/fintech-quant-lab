@@ -5,14 +5,18 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from app.core.backtest import (
+    BacktestMode,
     BacktestResult,
+    benchmark_metrics,
     buy_and_hold,
     run_backtest,
 )
 from app.core.cointegration import (
     engle_granger,
-    generate_signals as signals_pairs,
     rolling_zscore,
+)
+from app.core.cointegration import (
+    generate_signals as signals_pairs,
 )
 from app.core.data_loader import load_prices
 from app.core.history import init_db, save_run
@@ -184,6 +188,10 @@ with st.sidebar:
         ["Pairs Trading", "Momentum", "Mean Reversion"],
     )
 
+    ticker_b: str | None
+    entry: float | None
+    exit_: float | None
+
     if strategy == "Pairs Trading":
         if len(tickers) < 2:
             callout("Pairs Trading requiere al menos 2 tickers.", variant="warning")
@@ -235,7 +243,11 @@ if run:
 
     with st.spinner(f"Generando señales ({strategy})..."):
         try:
+            bt_mode: BacktestMode
             if strategy == "Pairs Trading":
+                assert ticker_b is not None and entry is not None and exit_ is not None, (
+                    "ticker_b/entry/exit_ solo son None cuando strategy != 'Pairs Trading'"
+                )
                 signals, asset_series = strategy_pairs_trading(
                     prices, ticker_a, ticker_b, window, entry, exit_,
                 )
@@ -246,6 +258,9 @@ if run:
                 benchmark_prices = prices[ticker_a]
                 bt_mode = "percent"
             else:
+                assert entry is not None and exit_ is not None, (
+                    "entry/exit_ solo son None cuando strategy == 'Momentum'"
+                )
                 signals, asset_series = strategy_mean_reversion(
                     prices[ticker_a], window, entry, exit_,
                 )
@@ -296,6 +311,25 @@ if run:
         ),
         use_container_width=True,
     )
+
+    section("📐 Métricas relativas al benchmark")
+    try:
+        bm = benchmark_metrics(result.equity_curve, bh)
+        bc1, bc2, bc3, bc4 = st.columns(4)
+        bc1.metric("Beta", f"{bm['beta']:.2f}")
+        bc2.metric("Alpha de Jensen (anual)", f"{bm['jensen_alpha']:.2%}")
+        bc3.metric("Tracking error (anual)", f"{bm['tracking_error']:.2%}")
+        bc4.metric("Information ratio", f"{bm['information_ratio']:.2f}")
+        callout(
+            "Beta mide la exposición al Buy & Hold; alpha de Jensen es el "
+            "exceso de retorno que NO se explica solo por esa exposición. "
+            "Information ratio es el equivalente al Sharpe pero usando el "
+            "benchmark como referencia en vez de 0.",
+            variant="info",
+        )
+    except ValueError as e:
+        callout(f"No se pudieron calcular las métricas de benchmark: {e}",
+                variant="info")
 
     col_dd, col_pos = st.columns(2)
     with col_dd:
