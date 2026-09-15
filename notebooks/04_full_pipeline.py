@@ -21,7 +21,7 @@
 # 2. **GARCH** — volatilidad condicional del activo
 # 3. **Cointegración** — búsqueda de par cointegrado y spread
 # 4. **Señales** — z-score causal + umbrales
-# 5. **Backtest** — motor vectorizado con costes
+# 5. **Backtest** — motor vectorizado con costes (modo 'absolute' para spreads)
 # 6. **Walk-forward** — validación IS/OOS
 # 7. **Monte Carlo** — distribución del Sharpe OOS
 # 8. **Robustness score** — agregado 0-100
@@ -226,8 +226,11 @@ plt.show()
 # ---
 # ## 5. Backtest — simulación con costes
 #
-# Ejecutamos el backtest sobre el spread con las señales generadas.
-# El motor aplica `signals.shift(1)` internamente para evitar look-ahead.
+# **Importante**: como operamos sobre un spread de cointegración
+# (`y - α - β·x`), el valor puede cruzar cero. Usamos `mode="absolute"`
+# para que el motor calcule el P&L como diferencia del nivel dividida
+# por el capital inicial, en lugar de usar retornos porcentuales
+# (que exigen precios > 0).
 
 # %%
 bt = run_backtest(
@@ -236,6 +239,7 @@ bt = run_backtest(
     initial_capital=INITIAL_CAPITAL,
     commission=COMMISSION,
     slippage=SLIPPAGE,
+    mode="absolute",
 )
 
 print(bt.summary())
@@ -288,6 +292,7 @@ wf = walk_forward_analysis(
     initial_capital=INITIAL_CAPITAL,
     commission=COMMISSION,
     slippage=SLIPPAGE,
+    mode="absolute",
 )
 
 print(f"Ventanas ejecutadas: {wf.params['n_windows']}")
@@ -318,6 +323,7 @@ comparison
 # %%
 is_sharpe = is_m.get("sharpe", np.nan)
 oos_sharpe = oos_m.get("sharpe", np.nan)
+degradation = np.nan
 
 if np.isfinite(is_sharpe) and np.isfinite(oos_sharpe) and is_sharpe != 0:
     degradation = (is_sharpe - oos_sharpe) / abs(is_sharpe)
@@ -357,10 +363,10 @@ mc = monte_carlo_bootstrap(
     metric_name="sharpe",
 )
 
-print(f"Media:      {mc.mean:.3f}")
-print(f"Std:        {mc.std:.3f}")
-print(f"Percentil 5:  {mc.percentiles['p05']:.3f}")
-print(f"Percentil 95: {mc.percentiles['p95']:.3f}")
+print(f"Media:         {mc.mean:.3f}")
+print(f"Std:           {mc.std:.3f}")
+print(f"Percentil 5:   {mc.percentiles['p05']:.3f}")
+print(f"Percentil 95:  {mc.percentiles['p95']:.3f}")
 print(f"P(Sharpe > 0): {(mc.distribution > 0).mean():.1%}")
 
 # %%
@@ -405,6 +411,7 @@ sens = parameter_sensitivity(
     initial_capital=INITIAL_CAPITAL,
     commission=COMMISSION,
     slippage=SLIPPAGE,
+    mode="absolute",
 )
 
 print(f"Estabilidad: {sens.stability_score:.2f} (1 = muy estable)")
@@ -462,21 +469,24 @@ print(f"Cointegración (EG):   p = {coint.pvalue:.4f} "
       f"({'✅' if coint.is_cointegrated else '❌'})")
 print(f"ADF del spread:       p = {coint.adf_spread_pvalue:.4f} "
       f"({'✅' if coint.adf_spread_pvalue < 0.05 else '❌'})")
-print(f"Half-life:            {hl:.1f} días" if np.isfinite(hl) else "Half-life: inf")
+if np.isfinite(hl):
+    print(f"Half-life:            {hl:.1f} días")
+else:
+    print("Half-life:            inf (no revierte)")
 print()
-print(f"Backtest (IS):")
+print("Backtest (IS):")
 print(f"  Retorno total:      {bt.metrics['total_return']:.2%}")
 print(f"  Sharpe:             {bt.metrics['sharpe']:.2f}")
 print(f"  Max DD:             {bt.metrics['max_drawdown']:.2%}")
 print(f"  Nº operaciones:     {bt.metrics['n_trades']}")
 print()
-print(f"Walk-forward (OOS):")
+print("Walk-forward (OOS):")
 print(f"  Sharpe IS:          {is_sharpe:.2f}")
 print(f"  Sharpe OOS:         {oos_sharpe:.2f}")
-if np.isfinite(is_sharpe) and is_sharpe != 0:
+if np.isfinite(degradation):
     print(f"  Degradación:        {degradation:.1%}")
 print()
-print(f"Monte Carlo:")
+print("Monte Carlo:")
 print(f"  Sharpe medio:       {mc.mean:.2f}")
 print(f"  P(Sharpe > 0):      {(mc.distribution > 0).mean():.1%}")
 print()
