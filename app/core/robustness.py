@@ -1,8 +1,7 @@
 """Análisis de robustez de estrategias.
 
 Incluye:
-    - Monte Carlo: simulaciones bootstrap de retornos para distribuciones
-      de métricas (Sharpe, Max DD, etc.).
+    - Monte Carlo: simulaciones bootstrap de retornos.
     - Bootstrap: remuestreo con reemplazo.
     - Block bootstrap: remuestreo por bloques (preserva autocorrelación).
     - Parameter sensitivity: variación de métricas al perturbar parámetros.
@@ -10,16 +9,13 @@ Incluye:
 """
 from __future__ import annotations
 
-import logging
-from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Callable
 
 import numpy as np
 import pandas as pd
 
-from app.core.backtest import run_backtest
-
-logger = logging.getLogger(__name__)
+from app.core.backtest import BacktestMode, run_backtest
 
 
 # ============================================================
@@ -31,7 +27,7 @@ class MonteCarloResult:
     n_simulations: int
     horizon: int
     metric: str
-    distribution: np.ndarray          # Valores simulados
+    distribution: np.ndarray
     mean: float
     std: float
     percentiles: dict[str, float]
@@ -48,22 +44,7 @@ def monte_carlo_bootstrap(
     block_size: int = 1,
     random_state: int | None = 42,
 ) -> MonteCarloResult:
-    """Monte Carlo por bootstrap sobre los retornos observados.
-
-    Args:
-        returns: Serie de retornos (diarios) observados.
-        n_simulations: Número de simulaciones.
-        horizon: Nº de barras por simulación. Si None, usa len(returns).
-        metric_fn: Función que recibe una serie de retornos y devuelve
-            una métrica. Si None, usa Sharpe anualizado.
-        metric_name: Nombre de la métrica (para reportes).
-        block_size: Tamaño del bloque para block bootstrap. Si 1, bootstrap
-            iid. Si > 1, preserva autocorrelación.
-        random_state: Semilla.
-
-    Returns:
-        MonteCarloResult con la distribución de la métrica.
-    """
+    """Monte Carlo por bootstrap sobre los retornos observados."""
     clean = returns.dropna().values
     if len(clean) < 2:
         raise ValueError("Se necesitan al menos 2 retornos.")
@@ -95,18 +76,7 @@ def monte_carlo_gbm(
     n_simulations: int = 1000,
     random_state: int | None = 42,
 ) -> np.ndarray:
-    """Monte Carlo con Movimiento Browniano Geométrico.
-
-    Args:
-        initial_price: Precio inicial S0.
-        mu: Deriva anual (ej. 0.08).
-        sigma: Volatilidad anual (ej. 0.20).
-        horizon: Nº de pasos (días de trading).
-        n_simulations: Nº de trayectorias.
-
-    Returns:
-        Array (n_simulations, horizon+1) con las trayectorias.
-    """
+    """Monte Carlo con Movimiento Browniano Geométrico."""
     if initial_price <= 0:
         raise ValueError("initial_price debe ser > 0.")
     if sigma < 0:
@@ -129,8 +99,8 @@ class SensitivityResult:
     """Resultado del análisis de sensibilidad de parámetros."""
     param_name: str
     base_value: float
-    variations: pd.DataFrame       # columnas: value, metric
-    stability_score: float         # 0-1 (1 = muy estable)
+    variations: pd.DataFrame
+    stability_score: float
 
 
 def parameter_sensitivity(
@@ -143,11 +113,19 @@ def parameter_sensitivity(
     initial_capital: float = 100_000.0,
     commission: float = 0.001,
     slippage: float = 0.0005,
+    mode: BacktestMode = "percent",
 ) -> SensitivityResult:
     """Analiza cómo cambia `metric` al variar un único parámetro.
 
-    Un cambio abrupto indica fragilidad (overfitting). Una meseta
-    alrededor del valor base indica robustez.
+    Args:
+        prices: Serie de precios o spread.
+        signal_factory: Función `(prices, params) -> signals`.
+        base_params: Parámetros base.
+        param_name: Nombre del parámetro a variar.
+        variations: Lista de valores a probar.
+        metric: Métrica del backtest a usar.
+        initial_capital, commission, slippage: Parámetros del backtest.
+        mode: 'percent' para precios, 'absolute' para spreads.
     """
     rows = []
     for val in variations:
@@ -158,13 +136,10 @@ def parameter_sensitivity(
                 prices, signals,
                 initial_capital=initial_capital,
                 commission=commission, slippage=slippage,
+                mode=mode,
             )
             rows.append({"value": val, metric: result.metrics.get(metric, np.nan)})
         except Exception:
-            logger.warning(
-                "parameter_sensitivity: valor %s de '%s' descartado.",
-                val, param_name, exc_info=True,
-            )
             rows.append({"value": val, metric: np.nan})
 
     df = pd.DataFrame(rows).sort_values("value")
@@ -189,84 +164,28 @@ class RobustnessReport:
     interpretation: str
 
 
-# Pesos por defecto (puntos máximos de cada componente, suman 100).
-# Son una elección heurística del autor -- no están derivados de ninguna
-# teoría formal de cuánto "debería" pesar cada factor. Se exponen como
-# parámetro de `robustness_score` precisamente para que se pueda evaluar
-# qué tan sensible es el score final a esta elección (ver
-# `robustness_score_weight_sensitivity`).
-DEFAULT_ROBUSTNESS_WEIGHTS: dict[str, float] = {
-    "degradacion_is_oos": 30.0,
-    "monte_carlo_sharpe": 30.0,
-    "estabilidad_parametros": 25.0,
-    "n_trades": 15.0,
-}
-
-
 def robustness_score(
     is_sharpe: float,
     oos_sharpe: float,
     mc_result: MonteCarloResult,
     sensitivity_score: float,
     n_trades: int,
-    weights: dict[str, float] | None = None,
 ) -> RobustnessReport:
-    """Calcula un score agregado de robustez 0-100.
-
-    Componentes (heurísticos, ver `DEFAULT_ROBUSTNESS_WEIGHTS`):
-        - Degradación IS → OOS.
-        - Sharpe Monte Carlo medio (positivo).
-        - Estabilidad de parámetros.
-        - Nº suficiente de trades.
-
-    Los pesos por defecto (30/30/25/15) son una elección razonada pero
-    arbitraria del autor, no un resultado derivado formalmente. Pasa
-    `weights` para explorar otras ponderaciones, o usa
-    `robustness_score_weight_sensitivity` para ver de un vistazo cuánto
-    cambia el score final entre varios esquemas de pesos razonables.
-
-    Args:
-        is_sharpe, oos_sharpe: Sharpe anualizado in-sample / out-of-sample.
-        mc_result: Resultado de `monte_carlo_bootstrap` sobre retornos OOS.
-        sensitivity_score: `stability_score` de `parameter_sensitivity`
-            (en [0, 1]; 1 = totalmente estable).
-        n_trades: Nº de operaciones ejecutadas (más trades = componente
-            más fiable estadísticamente, hasta un máximo de 100).
-        weights: Override de `DEFAULT_ROBUSTNESS_WEIGHTS`. Debe usar las
-            mismas 4 claves; no hace falta que sumen 100 (el resultado
-            se sigue acotando a [0, 100]).
-    """
-    w = weights if weights is not None else DEFAULT_ROBUSTNESS_WEIGHTS
-    missing = set(DEFAULT_ROBUSTNESS_WEIGHTS) - set(w)
-    if missing:
-        raise ValueError(f"Faltan pesos para: {sorted(missing)}")
-
+    """Calcula un score agregado de robustez 0-100."""
     components: dict[str, float] = {}
 
-    # 1. Degradación IS → OOS
     if np.isfinite(is_sharpe) and np.isfinite(oos_sharpe) and abs(is_sharpe) > 1e-6:
         degradation = max(0.0, (is_sharpe - oos_sharpe) / abs(is_sharpe))
-        components["degradacion_is_oos"] = float(
-            np.clip(w["degradacion_is_oos"] * (1 - min(degradation, 1)), 0, w["degradacion_is_oos"])
-        )
+        components["degradacion_is_oos"] = float(np.clip(30 * (1 - min(degradation, 1)), 0, 30))
     else:
         components["degradacion_is_oos"] = 0.0
 
-    # 2. Sharpe MC medio
     mc_sharpe = mc_result.mean
-    components["monte_carlo_sharpe"] = float(
-        np.clip(w["monte_carlo_sharpe"] * (mc_sharpe / 2), 0, w["monte_carlo_sharpe"])
-    )
+    components["monte_carlo_sharpe"] = float(np.clip(30 * (mc_sharpe / 2), 0, 30))
 
-    # 3. Estabilidad de parámetros
-    components["estabilidad_parametros"] = float(
-        np.clip(w["estabilidad_parametros"] * sensitivity_score, 0, w["estabilidad_parametros"])
-    )
+    components["estabilidad_parametros"] = float(np.clip(25 * sensitivity_score, 0, 25))
 
-    # 4. Nº de trades
-    components["n_trades"] = float(
-        np.clip(w["n_trades"] * min(n_trades / 100, 1), 0, w["n_trades"])
-    )
+    components["n_trades"] = float(np.clip(15 * min(n_trades / 100, 1), 0, 15))
 
     final = sum(components.values())
     final = float(np.clip(final, 0, 100))
@@ -285,50 +204,6 @@ def robustness_score(
         final_score=final,
         interpretation=interp,
     )
-
-
-def robustness_score_weight_sensitivity(
-    is_sharpe: float,
-    oos_sharpe: float,
-    mc_result: MonteCarloResult,
-    sensitivity_score: float,
-    n_trades: int,
-) -> pd.DataFrame:
-    """Recalcula el robustness score bajo varios esquemas de pesos, para
-    ver de un vistazo cuánto depende el número final de la ponderación
-    30/30/25/15 elegida por defecto (ver `robustness_score`).
-
-    Devuelve un DataFrame con una fila por esquema de pesos y el score
-    final resultante. Si el score varía poco entre esquemas, la
-    conclusión ("robusta"/"frágil"/etc.) es fiable independientemente
-    del pesaje; si varía mucho, conviene no tomar el número por defecto
-    como definitivo.
-    """
-    schemes = {
-        "default (30/30/25/15)": DEFAULT_ROBUSTNESS_WEIGHTS,
-        "equitativo (25/25/25/25)": {
-            "degradacion_is_oos": 25.0, "monte_carlo_sharpe": 25.0,
-            "estabilidad_parametros": 25.0, "n_trades": 25.0,
-        },
-        "prioriza OOS (45/30/15/10)": {
-            "degradacion_is_oos": 45.0, "monte_carlo_sharpe": 30.0,
-            "estabilidad_parametros": 15.0, "n_trades": 10.0,
-        },
-        "prioriza estabilidad (15/20/50/15)": {
-            "degradacion_is_oos": 15.0, "monte_carlo_sharpe": 20.0,
-            "estabilidad_parametros": 50.0, "n_trades": 15.0,
-        },
-    }
-
-    rows = []
-    for name, w in schemes.items():
-        report = robustness_score(
-            is_sharpe, oos_sharpe, mc_result, sensitivity_score, n_trades, weights=w,
-        )
-        rows.append({"esquema": name, "score_final": report.final_score,
-                      "interpretacion": report.interpretation})
-
-    return pd.DataFrame(rows)
 
 
 # ============================================================
@@ -401,5 +276,5 @@ def _stability_score(values: np.ndarray) -> float:
     std = np.std(valid, ddof=1)
     if abs(mean) < 1e-9:
         return 0.0
-    cv = std / abs(mean)          # coeficiente de variación
+    cv = std / abs(mean)
     return float(np.clip(1 - cv, 0, 1))
