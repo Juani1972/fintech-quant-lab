@@ -155,6 +155,7 @@ if selected_id is not None:
         st.markdown(f"**Notas**: {entry.notes}")
 
     if st.button(f"🗑️ Eliminar entrada #{entry.id}", type="secondary"):
+        assert entry.id is not None, "entry viene de get_run(), siempre tiene id"
         if delete_run(entry.id):
             st.success(f"Entrada #{entry.id} eliminada.")
             st.rerun()
