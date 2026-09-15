@@ -36,6 +36,28 @@ UNIVERSES: Final[dict[str, list[str]]] = {
     "Consumo básico": [
         "PG", "KO", "PEP", "WMT", "COST", "CL", "MCD",
     ],
+    # --- Mercados internacionales (tickers de Yahoo Finance con el
+    # sufijo de cada bolsa -- ver docs/MERCADOS.md para más detalle) ---
+    "IBEX 35 (España)": [
+        "SAN.MC", "BBVA.MC", "ITX.MC", "IBE.MC", "CABK.MC",
+        "FER.MC", "AENA.MC", "ELE.MC", "ACS.MC", "REP.MC",
+    ],
+    "DAX 40 (Alemania)": [
+        "SIE.DE", "ALV.DE", "SAP.DE", "ENR.DE", "AIR.PA",
+        "DTE.DE", "IFX.DE", "MUV2.DE", "DBK.DE", "DHL.DE",
+    ],
+    "CAC 40 (Francia)": [
+        "MC.PA", "OR.PA", "SAN.PA", "TTE.PA", "SU.PA",
+        "AIR.PA", "BNP.PA", "SAF.PA", "EL.PA", "AI.PA",
+    ],
+    "FTSE 100 (Reino Unido)": [
+        "HSBA.L", "AZN.L", "SHEL.L", "ULVR.L", "RR.L",
+        "BATS.L", "GSK.L", "BP.L", "RIO.L", "BARC.L",
+    ],
+    "Nikkei 225 (Japón)": [
+        "7203.T", "6758.T", "9983.T", "9984.T", "8035.T",
+        "6857.T", "6954.T", "4063.T", "9433.T", "6762.T",
+    ],
 }
 
 
