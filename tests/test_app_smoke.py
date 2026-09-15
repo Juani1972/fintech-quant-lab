@@ -54,3 +54,50 @@ def test_all_pages_compile_and_have_setup():
         assert "page_setup" in source or "set_page_config" in source, (
             f"{page.name} no llama a page_setup() ni a st.set_page_config()"
         )
+
+
+def test_history_page_renders_report_for_saved_run():
+    """Regresión del informe de investigación (página Histórico): al
+    seleccionar una entrada guardada, deben aparecer sus métricas
+    formateadas (no solo el JSON en bruto).
+
+    AppTest corre la página en un subproceso propio, así que no se le
+    puede inyectar una ruta de BD temporal desde el test — usa la ruta
+    real de `app.core.history.DB_PATH` (gitignorada) y la limpia con
+    `clear_all()` en el `finally`, tanto si el test pasa como si falla.
+    """
+    from app.core import history
+
+    history.init_db()
+    run_id = history.save_run(
+        strategy="Pairs Trading",
+        tickers=["KO", "PEP"],
+        start_date="2020-01-01",
+        end_date="2024-12-31",
+        params={"window": 60, "entry": 2.0, "exit_": 0.5},
+        metrics={
+            "annual_return": 0.142, "sharpe": 1.42, "sortino": 1.87,
+            "max_drawdown": -0.124, "calmar": 1.15, "total_return": 0.68,
+            "n_trades": 45, "win_rate": 0.58, "profit_factor": 1.6,
+        },
+        notes="Test de regresión",
+    )
+    try:
+        at = AppTest.from_file(str(APP_DIR / "pages" / "9_📚_Histórico.py"),
+                                default_timeout=30)
+        at.run()
+        assert not at.exception
+
+        detail_selects = [
+            w for w in at.selectbox if w.label and "Selecciona un ID" in w.label
+        ]
+        assert detail_selects, "No se encontró el selectbox de detalle"
+        detail_selects[0].select(run_id).run()
+        assert not at.exception
+
+        values = [m.value for m in at.metric]
+        assert "1.42" in values  # Sharpe
+        assert "14.20%" in values  # Retorno anual
+        assert "45" in values  # Nº operaciones
+    finally:
+        history.clear_all()
