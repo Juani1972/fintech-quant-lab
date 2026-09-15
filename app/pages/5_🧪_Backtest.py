@@ -6,18 +6,16 @@ import streamlit as st
 
 from app.core.backtest import (
     BacktestResult,
-    benchmark_metrics,
     buy_and_hold,
     run_backtest,
 )
 from app.core.cointegration import (
     engle_granger,
+    generate_signals as signals_pairs,
     rolling_zscore,
 )
-from app.core.cointegration import (
-    generate_signals as signals_pairs,
-)
 from app.core.data_loader import load_prices
+from app.core.history import init_db, save_run
 from app.state import ensure_session_initialized, get_global_params
 from app.styles import callout, footer, hero, page_setup, section
 
@@ -27,7 +25,8 @@ hero(
     title="Backtesting de Estrategias",
     subtitle=(
         "Motor vectorizado con anti-look-ahead, comisión, slippage, benchmark "
-        "y métricas completas (Sharpe, Sortino, Calmar, Max DD, Win Rate)."
+        "y métricas completas (Sharpe, Sortino, Calmar, Max DD, Win Rate). "
+        "Guarda los resultados en el histórico para comparar corridas."
     ),
     icon="🧪",
 )
@@ -44,9 +43,14 @@ if len(tickers) < 1:
 #  Estrategias
 # ============================================================
 def strategy_pairs_trading(
-    prices: pd.DataFrame, ticker_a: str, ticker_b: str,
-    window: int, entry: float, exit_: float,
+    prices: pd.DataFrame,
+    ticker_a: str,
+    ticker_b: str,
+    window: int,
+    entry: float,
+    exit_: float,
 ) -> tuple[pd.Series, pd.Series]:
+    """Estrategia de pairs trading basada en cointegración."""
     coint_result = engle_granger(prices[ticker_a], prices[ticker_b])
     spread = coint_result.spread
     z = rolling_zscore(spread, window=window)
@@ -54,7 +58,11 @@ def strategy_pairs_trading(
     return signals, spread
 
 
-def strategy_momentum(prices: pd.Series, window: int) -> tuple[pd.Series, pd.Series]:
+def strategy_momentum(
+    prices: pd.Series,
+    window: int,
+) -> tuple[pd.Series, pd.Series]:
+    """Momentum simple: long si el retorno de `window` días es positivo."""
     ret = prices.pct_change(window)
     signals = pd.Series(0, index=prices.index, dtype=int)
     signals[ret > 0] = 1
@@ -63,8 +71,12 @@ def strategy_momentum(prices: pd.Series, window: int) -> tuple[pd.Series, pd.Ser
 
 
 def strategy_mean_reversion(
-    prices: pd.Series, window: int, entry: float, exit_: float,
+    prices: pd.Series,
+    window: int,
+    entry: float,
+    exit_: float,
 ) -> tuple[pd.Series, pd.Series]:
+    """Reversión a la media: short si el z-score es alto, long si bajo."""
     mean = prices.rolling(window).mean()
     std = prices.rolling(window).std()
     z = (prices - mean) / std
@@ -89,57 +101,83 @@ def strategy_mean_reversion(
 # ============================================================
 #  Gráficos
 # ============================================================
-def plot_equity_curve(strategy, benchmark=None, title="Curva de capital"):
+def plot_equity_curve(
+    strategy: pd.Series,
+    benchmark: pd.Series | None = None,
+    title: str = "Curva de capital",
+) -> go.Figure:
+    """Gráfico de curva de capital con benchmark opcional."""
     fig = go.Figure()
     fig.add_trace(go.Scatter(
-        x=strategy.index, y=strategy.values, mode="lines",
-        name="Estrategia", line={"color": "#2563eb", "width": 2},
+        x=strategy.index,
+        y=strategy.values,
+        mode="lines",
+        name="Estrategia",
+        line={"color": "#2563eb", "width": 2},
     ))
     if benchmark is not None:
         fig.add_trace(go.Scatter(
-            x=benchmark.index, y=benchmark.values, mode="lines",
-            name="Buy & Hold", line={"color": "gray", "width": 1.5, "dash": "dash"},
+            x=benchmark.index,
+            y=benchmark.values,
+            mode="lines",
+            name="Buy & Hold",
+            line={"color": "gray", "width": 1.5, "dash": "dash"},
         ))
     fig.update_layout(
-        title=title, yaxis_title="Capital",
-        template="plotly_white", height=450, hovermode="x unified",
+        title=title,
+        yaxis_title="Capital",
+        template="plotly_white",
+        height=450,
+        hovermode="x unified",
     )
     return fig
 
 
-def plot_drawdown(equity):
+def plot_drawdown(equity: pd.Series) -> go.Figure:
+    """Gráfico de drawdown."""
     running_max = equity.cummax()
     dd = (equity - running_max) / running_max * 100
     fig = go.Figure()
     fig.add_trace(go.Scatter(
-        x=dd.index, y=dd.values, fill="tozeroy",
-        line={"color": "crimson"}, name="Drawdown",
+        x=dd.index,
+        y=dd.values,
+        fill="tozeroy",
+        line={"color": "crimson"},
+        name="Drawdown",
     ))
     fig.update_layout(
-        title="Drawdown (%)", yaxis_title="%",
-        template="plotly_white", height=300,
+        title="Drawdown (%)",
+        yaxis_title="%",
+        template="plotly_white",
+        height=300,
     )
     return fig
 
 
-def plot_positions(positions):
+def plot_positions(positions: pd.Series) -> go.Figure:
+    """Gráfico de posiciones a lo largo del tiempo."""
     fig = go.Figure()
     fig.add_trace(go.Scatter(
-        x=positions.index, y=positions.values, mode="lines",
+        x=positions.index,
+        y=positions.values,
+        mode="lines",
         line={"color": "#16a34a", "width": 1.5, "shape": "hv"},
         name="Posición",
     ))
     fig.update_layout(
         title="Posiciones (-1 short, 0 neutral, 1 long)",
         yaxis_title="Posición",
-        template="plotly_white", height=250,
+        template="plotly_white",
+        height=250,
     )
     return fig
 
 
 def format_metrics(result: BacktestResult) -> pd.DataFrame:
+    """Convierte el dict de métricas en DataFrame formateado."""
     m = result.metrics
-    pct_keys = {"total_return", "annual_return", "max_drawdown", "win_rate", "exposure"}
+    pct_keys = {"total_return", "annual_return", "max_drawdown",
+                "win_rate", "exposure"}
     rows = []
     for k, v in m.items():
         if k in pct_keys:
@@ -152,19 +190,16 @@ def format_metrics(result: BacktestResult) -> pd.DataFrame:
 
 
 # ============================================================
-#  Sidebar
+#  Sidebar: parámetros del backtest
 # ============================================================
 with st.sidebar:
     st.markdown("---")
     st.markdown("## 🧪 Configuración del backtest")
+
     strategy = st.selectbox(
         "Estrategia",
         ["Pairs Trading", "Momentum", "Mean Reversion"],
     )
-
-    ticker_b: str | None
-    entry: float | None
-    exit_: float | None
 
     if strategy == "Pairs Trading":
         if len(tickers) < 2:
@@ -179,8 +214,9 @@ with st.sidebar:
         ticker_a = st.selectbox("Ticker", tickers, index=0)
         ticker_b = None
         window = st.slider("Ventana de momentum (días)", 5, 250, 60)
-        entry = exit_ = None
-    else:
+        entry = None
+        exit_ = None
+    else:  # Mean Reversion
         ticker_a = st.selectbox("Ticker", tickers, index=0)
         ticker_b = None
         window = st.slider("Ventana media móvil", 10, 200, 30)
@@ -189,7 +225,8 @@ with st.sidebar:
 
     st.markdown("**Costes y capital**")
     initial_capital = st.number_input(
-        "Capital inicial (€)", min_value=1_000, value=100_000, step=10_000,
+        "Capital inicial (€)",
+        min_value=1_000, value=100_000, step=10_000,
     )
     commission = st.number_input(
         "Comisión (fracción, ej. 0.001 = 10 bps)",
@@ -199,13 +236,15 @@ with st.sidebar:
         "Slippage (fracción, ej. 0.0005 = 5 bps)",
         min_value=0.0, max_value=0.05, value=0.0005, step=0.0005, format="%.4f",
     )
+
     run = st.button("🚀 Ejecutar backtest", type="primary", use_container_width=True)
 
 
 # ============================================================
-#  Ejecución
+#  Ejecución del backtest
 # ============================================================
 if run:
+    # --- 1. Descargar datos ---
     with st.spinner("Descargando datos..."):
         try:
             prices = load_prices(tickers, start, end)
@@ -213,12 +252,10 @@ if run:
             callout(f"Error al cargar datos: {e}", variant="danger")
             st.stop()
 
+    # --- 2. Generar señales ---
     with st.spinner(f"Generando señales ({strategy})..."):
         try:
             if strategy == "Pairs Trading":
-                assert ticker_b is not None and entry is not None and exit_ is not None, (
-                    "ticker_b/entry/exit_ solo son None cuando strategy != 'Pairs Trading'"
-                )
                 signals, asset_series = strategy_pairs_trading(
                     prices, ticker_a, ticker_b, window, entry, exit_,
                 )
@@ -227,9 +264,6 @@ if run:
                 signals, asset_series = strategy_momentum(prices[ticker_a], window)
                 benchmark_prices = prices[ticker_a]
             else:
-                assert entry is not None and exit_ is not None, (
-                    "entry/exit_ solo son None cuando strategy == 'Momentum'"
-                )
                 signals, asset_series = strategy_mean_reversion(
                     prices[ticker_a], window, entry, exit_,
                 )
@@ -240,6 +274,7 @@ if run:
 
     signals = signals.reindex(asset_series.index).fillna(0)
 
+    # --- 3. Ejecutar backtest ---
     with st.spinner("Ejecutando backtest..."):
         try:
             result = run_backtest(
@@ -259,6 +294,7 @@ if run:
         variant="success",
     )
 
+    # --- KPIs ---
     section("📊 KPIs principales")
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Retorno total", f"{result.metrics['total_return']:.2%}")
@@ -267,48 +303,40 @@ if run:
     c4.metric("Max DD", f"{result.metrics['max_drawdown']:.2%}")
     c5.metric("Win rate", f"{result.metrics['win_rate']:.1%}")
 
+    # --- Curva de capital ---
     section("📈 Curva de capital")
     bh = buy_and_hold(benchmark_prices, initial_capital=initial_capital)
     bh = bh.reindex(result.equity_curve.index).ffill()
     st.plotly_chart(
-        plot_equity_curve(result.equity_curve, benchmark=bh,
-                          title=f"{strategy} vs Buy & Hold ({ticker_a})"),
+        plot_equity_curve(
+            result.equity_curve,
+            benchmark=bh,
+            title=f"{strategy} vs Buy & Hold ({ticker_a})",
+        ),
         use_container_width=True,
     )
 
-    section("📐 Métricas relativas al benchmark")
-    try:
-        bm = benchmark_metrics(result.equity_curve, bh)
-        bc1, bc2, bc3, bc4 = st.columns(4)
-        bc1.metric("Beta", f"{bm['beta']:.2f}")
-        bc2.metric("Alpha de Jensen (anual)", f"{bm['jensen_alpha']:.2%}")
-        bc3.metric("Tracking error (anual)", f"{bm['tracking_error']:.2%}")
-        bc4.metric("Information ratio", f"{bm['information_ratio']:.2f}")
-        callout(
-            "Beta mide la exposición al Buy & Hold; alpha de Jensen es el "
-            "exceso de retorno que NO se explica solo por esa exposición. "
-            "Information ratio es el equivalente al Sharpe pero usando el "
-            "benchmark como referencia en vez de 0.",
-            variant="info",
-        )
-    except ValueError as e:
-        callout(f"No se pudieron calcular las métricas de benchmark: {e}",
-                variant="info")
-
+    # --- Drawdown y posiciones ---
     col_dd, col_pos = st.columns(2)
     with col_dd:
         st.plotly_chart(plot_drawdown(result.equity_curve), use_container_width=True)
     with col_pos:
         st.plotly_chart(plot_positions(result.positions), use_container_width=True)
 
+    # --- Métricas completas ---
     section("📊 Métricas completas")
     col_m, col_p = st.columns([2, 1])
     with col_m:
-        st.dataframe(format_metrics(result), use_container_width=True, hide_index=True)
+        st.dataframe(
+            format_metrics(result),
+            use_container_width=True,
+            hide_index=True,
+        )
     with col_p:
         st.markdown("**Parámetros usados**")
         st.json(result.params)
 
+    # --- Tabla de trades ---
     section("📋 Operaciones")
     if len(result.trades) > 0:
         trades_display = result.trades.copy()
@@ -316,6 +344,7 @@ if run:
         trades_display["pnl_abs"] = trades_display["pnl_abs"].map(lambda x: f"{x:,.2f} €")
         st.dataframe(trades_display, use_container_width=True, hide_index=True)
 
+        # --- Descargas ---
         section("⬇️ Descargas")
         col_d1, col_d2, col_d3 = st.columns(3)
         with col_d1:
@@ -348,11 +377,63 @@ if run:
             variant="info",
         )
 
+    # ============================================================
+    #  Guardar en histórico
+    # ============================================================
+    section("💾 Guardar en histórico")
+
+    init_db()
+
+    with st.form("save_run_form", clear_on_submit=True):
+        notes = st.text_input(
+            "Notas (opcional)",
+            max_chars=200,
+            placeholder="Ej: Prueba con ventana más corta",
+        )
+        submitted = st.form_submit_button(
+            "💾 Guardar en histórico",
+            type="primary",
+            use_container_width=False,
+        )
+
+    if submitted:
+        try:
+            run_id = save_run(
+                strategy=strategy,
+                tickers=tickers,
+                start_date=str(start),
+                end_date=str(end),
+                params={
+                    "ticker_a": ticker_a,
+                    "ticker_b": ticker_b,
+                    "window": window,
+                    "entry": entry,
+                    "exit_": exit_,
+                    "initial_capital": initial_capital,
+                    "commission": commission,
+                    "slippage": slippage,
+                },
+                metrics=result.metrics,
+                notes=notes or None,
+            )
+            callout(
+                f"✅ Backtest guardado con ID <strong>#{run_id}</strong>. "
+                f"Consúltalo en la página <strong>📚 Histórico</strong>.",
+                variant="success",
+            )
+        except Exception as e:
+            callout(f"Error al guardar: {e}", variant="danger")
+
 else:
     callout(
         "Configura los parámetros en la barra lateral y pulsa "
         "<strong>🚀 Ejecutar backtest</strong>.<br><br>"
-        "<strong>Estrategias:</strong> Pairs Trading, Momentum, Mean Reversion.",
+        "<strong>Estrategias disponibles:</strong><br>"
+        "• <strong>Pairs Trading</strong>: cointegración + z-score del spread.<br>"
+        "• <strong>Momentum</strong>: long si el retorno de <code>window</code> días es positivo.<br>"
+        "• <strong>Mean Reversion</strong>: long/short según z-score del precio.<br><br>"
+        "<strong>💾 Guardar en histórico:</strong> tras ejecutar, guarda la corrida "
+        "para compararla después en la página 📚 Histórico.",
         variant="info",
     )
 
