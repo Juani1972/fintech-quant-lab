@@ -42,12 +42,11 @@ if len(tickers) < 1:
 with st.sidebar:
     st.markdown("---")
     st.markdown("## 🎛️ Configuración Robustez")
+
     strategy = st.selectbox(
         "Estrategia",
         ["Momentum", "Mean Reversion", "Pairs Trading (spread)"],
     )
-
-    t2: str | None
 
     if strategy == "Pairs Trading (spread)":
         if len(tickers) < 2:
@@ -61,7 +60,10 @@ with st.sidebar:
 
     st.markdown("**Parámetros base**")
     window = st.slider("Ventana", 20, 200, 60, 5)
-    entry = st.slider("Umbral entrada", 0.5, 3.0, 2.0, 0.1) if strategy != "Momentum" else None
+    if strategy != "Momentum":
+        entry = st.slider("Umbral entrada", 0.5, 3.0, 2.0, 0.1)
+    else:
+        entry = None
 
     st.markdown("**Walk-forward**")
     train_size = st.slider("Train", 200, 1000, 504, 21)
@@ -82,7 +84,7 @@ if run:
             callout(f"Error al cargar datos: {e}", variant="danger")
             st.stop()
 
-    # --- Preparar serie y factorías ---
+    # --- Preparar serie, factorías y modo ---
     if strategy == "Pairs Trading (spread)":
         try:
             coint = engle_granger(prices[t1], prices[t2])
@@ -104,6 +106,7 @@ if run:
             return generate_signals(z, entry=params.get("entry", 2.0), exit_=0.5)
 
         base_params = {"window": window, "entry": entry}
+        robustness_mode = "absolute"
     elif strategy == "Momentum":
         series = prices[t1]
 
@@ -118,6 +121,7 @@ if run:
             return s
 
         base_params = {"window": window}
+        robustness_mode = "percent"
     else:
         series = prices[t1]
 
@@ -149,6 +153,7 @@ if run:
             return s
 
         base_params = {"window": window, "entry": entry}
+        robustness_mode = "percent"
 
     with st.spinner("Ejecutando walk-forward..."):
         try:
@@ -157,6 +162,7 @@ if run:
                 signal_generator=generator_factory(base_params),
                 train_size=train_size,
                 test_size=test_size,
+                mode=robustness_mode,
             )
         except ValueError as e:
             callout(f"Error en walk-forward: {e}", variant="danger")
@@ -183,7 +189,6 @@ if run:
             st.stop()
 
     with st.spinner("Analizando sensibilidad..."):
-        variations: list[float]
         if strategy == "Momentum":
             variations = [max(5, window - 30), max(5, window - 15),
                           window, window + 15, window + 30]
@@ -191,15 +196,16 @@ if run:
                 series, simple_factory, base_params,
                 param_name="window", variations=variations,
                 metric="sharpe",
+                mode=robustness_mode,
             )
         else:
-            assert entry is not None, "entry solo es None cuando strategy == 'Momentum'"
             variations = [max(0.5, entry - 0.5), max(0.5, entry - 0.25),
                           entry, entry + 0.25, entry + 0.5]
             sens = parameter_sensitivity(
                 series, simple_factory, base_params,
                 param_name="entry", variations=variations,
                 metric="sharpe",
+                mode=robustness_mode,
             )
 
     report = robustness_score(
