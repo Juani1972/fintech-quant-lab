@@ -185,8 +185,17 @@ cd fintech-quant-lab
 python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-streamlit run app/main.py
+python -m streamlit run app/main.py
 ```
+
+> **Nota (Windows)**: usa siempre `python -m streamlit run app/main.py`,
+> no `streamlit run app/main.py` a secas. El ejecutable `streamlit.exe`
+> vive en `venv\Scripts\`, y al invocarlo directamente Python añade esa
+> carpeta a `sys.path` en vez de la raíz del proyecto — el resultado es
+> `ModuleNotFoundError: No module named 'app'` al arrancar. `python -m`
+> sí añade el directorio actual (la raíz del proyecto) a `sys.path`,
+> que es donde vive el paquete `app`. En Linux/macOS no suele hacer
+> falta, pero tampoco molesta.
 
 ### Opción 2: scripts incluidos
 

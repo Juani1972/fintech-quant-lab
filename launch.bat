@@ -16,8 +16,15 @@ REM 2. Activar entorno virtual
 call venv\Scripts\activate.bat
 
 REM 3. Iniciar Streamlit en segundo plano
+REM    IMPORTANTE: "python -m streamlit" (no "streamlit" a secas). El
+REM    ejecutable streamlit.exe vive en venv\Scripts\, así que si se
+REM    invoca directamente, Python añade ESA carpeta a sys.path en vez
+REM    de la raíz del proyecto -- y falla con
+REM    "ModuleNotFoundError: No module named 'app'" al importar
+REM    app.config. "python -m streamlit" sí añade el directorio actual
+REM    (la raíz del proyecto) a sys.path, que es donde vive el paquete app.
 echo 🌐 Iniciando servidor Streamlit en http://localhost:8501 ...
-start /B streamlit run app/main.py --server.port=8501 --server.headless=true
+start /B python -m streamlit run app/main.py --server.port=8501 --server.headless=true
 
 REM 4. Esperar a que el servidor esté listo
 timeout /t 4 /nobreak >nul
