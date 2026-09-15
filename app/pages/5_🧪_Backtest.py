@@ -5,21 +5,18 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from app.core.backtest import (
-    BacktestMode,
     BacktestResult,
-    benchmark_metrics,
     buy_and_hold,
     run_backtest,
 )
 from app.core.cointegration import (
     engle_granger,
-    rolling_zscore,
-)
-from app.core.cointegration import (
     generate_signals as signals_pairs,
+    rolling_zscore,
 )
 from app.core.data_loader import load_prices
 from app.core.history import init_db, save_run
+from app.core.report import build_backtest_report
 from app.state import ensure_session_initialized, get_global_params
 from app.styles import callout, footer, hero, page_setup, section
 
@@ -30,7 +27,7 @@ hero(
     subtitle=(
         "Motor vectorizado con anti-look-ahead, comisión, slippage, benchmark "
         "y métricas completas (Sharpe, Sortino, Calmar, Max DD, Win Rate). "
-        "Guarda los resultados en el histórico para comparar corridas."
+        "Guarda los resultados en el histórico y exporta un informe HTML."
     ),
     icon="🧪",
 )
@@ -188,10 +185,6 @@ with st.sidebar:
         ["Pairs Trading", "Momentum", "Mean Reversion"],
     )
 
-    ticker_b: str | None
-    entry: float | None
-    exit_: float | None
-
     if strategy == "Pairs Trading":
         if len(tickers) < 2:
             callout("Pairs Trading requiere al menos 2 tickers.", variant="warning")
@@ -243,11 +236,7 @@ if run:
 
     with st.spinner(f"Generando señales ({strategy})..."):
         try:
-            bt_mode: BacktestMode
             if strategy == "Pairs Trading":
-                assert ticker_b is not None and entry is not None and exit_ is not None, (
-                    "ticker_b/entry/exit_ solo son None cuando strategy != 'Pairs Trading'"
-                )
                 signals, asset_series = strategy_pairs_trading(
                     prices, ticker_a, ticker_b, window, entry, exit_,
                 )
@@ -258,9 +247,6 @@ if run:
                 benchmark_prices = prices[ticker_a]
                 bt_mode = "percent"
             else:
-                assert entry is not None and exit_ is not None, (
-                    "entry/exit_ solo son None cuando strategy == 'Momentum'"
-                )
                 signals, asset_series = strategy_mean_reversion(
                     prices[ticker_a], window, entry, exit_,
                 )
@@ -311,25 +297,6 @@ if run:
         ),
         use_container_width=True,
     )
-
-    section("📐 Métricas relativas al benchmark")
-    try:
-        bm = benchmark_metrics(result.equity_curve, bh)
-        bc1, bc2, bc3, bc4 = st.columns(4)
-        bc1.metric("Beta", f"{bm['beta']:.2f}")
-        bc2.metric("Alpha de Jensen (anual)", f"{bm['jensen_alpha']:.2%}")
-        bc3.metric("Tracking error (anual)", f"{bm['tracking_error']:.2%}")
-        bc4.metric("Information ratio", f"{bm['information_ratio']:.2f}")
-        callout(
-            "Beta mide la exposición al Buy & Hold; alpha de Jensen es el "
-            "exceso de retorno que NO se explica solo por esa exposición. "
-            "Information ratio es el equivalente al Sharpe pero usando el "
-            "benchmark como referencia en vez de 0.",
-            variant="info",
-        )
-    except ValueError as e:
-        callout(f"No se pudieron calcular las métricas de benchmark: {e}",
-                variant="info")
 
     col_dd, col_pos = st.columns(2)
     with col_dd:
@@ -388,6 +355,44 @@ if run:
             variant="info",
         )
 
+    # ============================================================
+    #  Informe HTML
+    # ============================================================
+    section("📄 Informe HTML")
+
+    callout(
+        "Descarga un informe HTML autocontenido con gráficos interactivos, "
+        "métricas y tabla de operaciones. Se puede abrir en cualquier "
+        "navegador y compartir por email.",
+        variant="info",
+    )
+
+    try:
+        report_html = build_backtest_report(
+            strategy=strategy,
+            tickers=tickers,
+            start_date=str(start),
+            end_date=str(end),
+            params=result.params,
+            metrics=result.metrics,
+            equity_curve=result.equity_curve,
+            positions=result.positions,
+            trades=result.trades,
+            benchmark_equity=bh,
+        )
+        st.download_button(
+            "📄 Descargar informe HTML",
+            report_html.encode("utf-8"),
+            file_name=f"report_{strategy.replace(' ', '_').lower()}.html",
+            mime="text/html",
+            type="primary",
+        )
+    except Exception as e:
+        callout(f"Error generando el informe: {e}", variant="warning")
+
+    # ============================================================
+    #  Guardar en histórico
+    # ============================================================
     section("💾 Guardar en histórico")
 
     init_db()
@@ -441,8 +446,10 @@ else:
         "• <strong>Pairs Trading</strong>: cointegración + z-score del spread.<br>"
         "• <strong>Momentum</strong>: long si el retorno de <code>window</code> días es positivo.<br>"
         "• <strong>Mean Reversion</strong>: long/short según z-score del precio.<br><br>"
-        "<strong>💾 Guardar en histórico:</strong> tras ejecutar, guarda la corrida "
-        "para compararla después en la página 📚 Histórico.",
+        "<strong>📄 Informe HTML:</strong> tras ejecutar, descarga un informe "
+        "autocontenido con gráficos interactivos.<br>"
+        "<strong>💾 Guardar en histórico:</strong> guarda la corrida para "
+        "compararla después en la página 📚 Histórico.",
         variant="info",
     )
 
