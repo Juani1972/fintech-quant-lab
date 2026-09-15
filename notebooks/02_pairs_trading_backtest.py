@@ -20,7 +20,8 @@
 # 2. Test de cointegración (Engle-Granger) y ADF del spread.
 # 3. Construir el z-score causal.
 # 4. Generar señales de entrada/salida.
-# 5. Ejecutar el backtest con comisión y slippage.
+# 5. Ejecutar el backtest con comisión y slippage (`mode="absolute"`
+#    porque operamos sobre un spread que puede cruzar cero).
 # 6. Comparar con buy & hold.
 
 # %%
@@ -62,7 +63,10 @@ print(f"Beta (hedge ratio):     {result.beta:.4f}")
 print(f"Cointegradas:           {result.is_cointegrated}")
 
 hl = half_life(result.spread)
-print(f"Half-life:              {hl:.1f} días" if np.isfinite(hl) else "Half-life: inf")
+if np.isfinite(hl):
+    print(f"Half-life:              {hl:.1f} días")
+else:
+    print("Half-life:              inf (no revierte)")
 
 # %% [markdown]
 # ## 3. Z-score y señales
@@ -87,6 +91,11 @@ plt.show()
 
 # %% [markdown]
 # ## 4. Backtest sobre el spread
+#
+# **Nota**: `mode="absolute"` es necesario porque el spread de una
+# cointegración oscila alrededor de cero y puede tomar valores negativos.
+# El modo `"percent"` (default) exige precios estrictamente positivos y
+# falla con cualquier spread realista.
 
 # %%
 bt = run_backtest(
@@ -95,6 +104,7 @@ bt = run_backtest(
     initial_capital=100_000,
     commission=0.001,
     slippage=0.0005,
+    mode="absolute",
 )
 
 print(bt.summary())
@@ -109,8 +119,10 @@ bh = bh.reindex(bt.equity_curve.index).ffill()
 comparison = compare_to_benchmark(bt.equity_curve, bh)
 
 fig, ax = plt.subplots(figsize=(12, 5))
-ax.plot(comparison.index, comparison["strategy_norm"], label="Pairs Trading", linewidth=2)
-ax.plot(comparison.index, comparison["benchmark_norm"], label="Buy & Hold KO", linestyle="--")
+ax.plot(comparison.index, comparison["strategy_norm"],
+        label="Pairs Trading", linewidth=2)
+ax.plot(comparison.index, comparison["benchmark_norm"],
+        label="Buy & Hold KO", linestyle="--")
 ax.axhline(1.0, color="gray", linewidth=0.5)
 ax.set_title("Curva de capital normalizada")
 ax.set_ylabel("Capital (base 1.0)")
