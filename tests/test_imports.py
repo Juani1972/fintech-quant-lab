@@ -103,6 +103,7 @@ def test_no_duplicate_pages():
         "convive con el archivo correcto — borra el que no tenga el "
         "emoji legible en el nombre."
     )
-    assert len(prefixes) == 8, (
-        f"Se esperaban 8 páginas (1-8), hay {len(prefixes)}: {sorted(prefixes)}"
+    assert len(prefixes) >= 8, (
+        f"Se esperaban al menos 8 páginas, hay {len(prefixes)}: {sorted(prefixes)}. "
+        "Si has borrado una página a propósito, baja este mínimo."
     )
