@@ -10,19 +10,15 @@ generaliza.
 """
 from __future__ import annotations
 
-import logging
-from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Callable
 
 import numpy as np
 import pandas as pd
 
-from app.core.backtest import run_backtest
+from app.core.backtest import BacktestMode, run_backtest
 
-logger = logging.getLogger(__name__)
 
-# Tipo: función que recibe precios IS y devuelve una señal completa
-# (indexada por el índice completo de precios) para OOS.
 SignalGenerator = Callable[[pd.Series, pd.Series], pd.Series]
 
 
@@ -53,36 +49,23 @@ def walk_forward_analysis(
     train_size: int = 504,
     test_size: int = 126,
     step: int | None = None,
-    embargo: int = 0,
     initial_capital: float = 100_000.0,
     commission: float = 0.001,
     slippage: float = 0.0005,
+    mode: BacktestMode = "percent",
 ) -> WalkForwardResult:
-    """Ejecuta walk-forward analysis (rolling: cada ventana usa solo su
-    propio tramo de entrenamiento, no acumula historia de ventanas
-    anteriores — a diferencia de un esquema "anchored/expanding", que
-    no está implementado aquí).
+    """Ejecuta walk-forward analysis.
 
     Args:
-        prices: Serie de precios del activo.
+        prices: Serie de precios o spread.
         signal_generator: Función `(precios_train, precios_full) -> señales_full`.
-            Debe devolver una serie de señales (-1, 0, 1) indexada por el
-            índice COMPLETO de precios. Solo se usarán las señales
-            correspondientes al periodo de test.
         train_size: Nº de barras de la ventana de entrenamiento.
         test_size: Nº de barras de la ventana de test.
-        step: Desplazamiento entre ventanas. Si None, usa test_size (no solapa).
-        embargo: Nº de barras que se descartan entre el final del tramo
-            de entrenamiento y el inicio del tramo de test. Por defecto
-            0 (sin embargo, tramos contiguos). Útil si las señales usan
-            ventanas rodantes, medias, o cualquier feature cuyo cálculo
-            en el último tramo de train "roce" observaciones muy
-            cercanas al test, o si en el futuro se usan etiquetas con
-            solape temporal (p.ej. eventos con horizonte de varios
-            días) — un embargo > 0 reduce ese contagio de información.
+        step: Desplazamiento entre ventanas. Si None, usa test_size.
         initial_capital: Capital para cada backtest OOS.
         commission: Comisión por operación.
         slippage: Slippage por operación.
+        mode: 'percent' para precios, 'absolute' para spreads.
 
     Returns:
         WalkForwardResult con las métricas IS/OOS agregadas.
@@ -92,69 +75,47 @@ def walk_forward_analysis(
     """
     if step is None:
         step = test_size
-    if embargo < 0:
-        raise ValueError(f"embargo debe ser >= 0 (se dio {embargo}).")
 
     n = len(prices)
-    if n < train_size + embargo + test_size:
+    if n < train_size + test_size:
         raise ValueError(
             f"Datos insuficientes: {n} barras. "
-            f"Se necesitan al menos {train_size + embargo + test_size} "
-            f"(train_size + embargo + test_size)."
+            f"Se necesitan al menos {train_size + test_size}."
         )
 
     windows: list[WalkForwardWindow] = []
     oos_equity_parts: list[pd.Series] = []
-    n_windows_skipped = 0
 
     start = 0
-    while start + train_size + embargo + test_size <= n:
+    while start + train_size + test_size <= n:
         train_slice = prices.iloc[start : start + train_size]
-        test_start = start + train_size + embargo
-        test_slice = prices.iloc[test_start : test_start + test_size]
-
-        # El generador ve todo hasta el final del test (pero debe ser causal)
-        visible = prices.iloc[: test_start + test_size]
+        test_slice = prices.iloc[start + train_size : start + train_size + test_size]
+        visible = prices.iloc[: start + train_size + test_size]
 
         try:
             signals_full = signal_generator(train_slice, visible)
         except Exception:
-            logger.warning(
-                "Ventana walk-forward descartada (train=%s..%s, test=%s..%s): "
-                "signal_generator lanzó una excepción.",
-                train_slice.index[0], train_slice.index[-1],
-                test_slice.index[0], test_slice.index[-1],
-                exc_info=True,
-            )
-            n_windows_skipped += 1
             start += step
             continue
 
         if signals_full is None or len(signals_full) == 0:
-            logger.warning(
-                "Ventana walk-forward descartada (train=%s..%s, test=%s..%s): "
-                "signal_generator devolvió señales vacías.",
-                train_slice.index[0], train_slice.index[-1],
-                test_slice.index[0], test_slice.index[-1],
-            )
-            n_windows_skipped += 1
             start += step
             continue
 
-        # Señales IS
         signals_is = signals_full.reindex(train_slice.index).fillna(0)
         res_is = run_backtest(
             train_slice, signals_is,
             initial_capital=initial_capital,
             commission=commission, slippage=slippage,
+            mode=mode,
         )
 
-        # Señales OOS (¡solo del tramo de test!)
         signals_oos = signals_full.reindex(test_slice.index).fillna(0)
         res_oos = run_backtest(
             test_slice, signals_oos,
             initial_capital=initial_capital,
             commission=commission, slippage=slippage,
+            mode=mode,
         )
 
         windows.append(WalkForwardWindow(
@@ -166,21 +127,13 @@ def walk_forward_analysis(
             oos_metrics=res_oos.metrics,
         ))
 
-        # Guardar curva OOS
         oos_equity_parts.append(res_oos.equity_curve)
-
         start += step
 
     if not windows:
-        raise ValueError(
-            f"No se pudo completar ninguna ventana walk-forward "
-            f"({n_windows_skipped} descartadas por errores o señales vacías; "
-            "revisa los logs para más detalle)."
-        )
+        raise ValueError("No se pudo completar ninguna ventana walk-forward.")
 
-    # Concatenar OOS con capital compuesto
     oos_equity_concat = _compound_equity(oos_equity_parts, initial_capital)
-
     is_agg = _aggregate_metrics([w.is_metrics for w in windows])
     oos_agg = _aggregate_metrics([w.oos_metrics for w in windows])
 
@@ -193,12 +146,11 @@ def walk_forward_analysis(
             "train_size": train_size,
             "test_size": test_size,
             "step": step,
-            "embargo": embargo,
             "n_windows": len(windows),
-            "n_windows_skipped": n_windows_skipped,
             "initial_capital": initial_capital,
             "commission": commission,
             "slippage": slippage,
+            "mode": mode,
         },
     )
 
@@ -220,10 +172,7 @@ def _compound_equity(
     equity_parts: list[pd.Series],
     initial_capital: float,
 ) -> pd.Series:
-    """Concatena curvas OOS aplicando composición de capital.
-
-    Cada tramo OOS empieza con el capital final del tramo anterior.
-    """
+    """Concatena curvas OOS aplicando composición de capital."""
     if not equity_parts:
         return pd.Series(dtype=float)
 
@@ -233,7 +182,6 @@ def _compound_equity(
     for eq in equity_parts:
         if len(eq) == 0:
             continue
-        # Reescalar esta curva a capital actual
         factor = capital / eq.iloc[0]
         eq_scaled = eq * factor
         compounded.append(eq_scaled)
@@ -250,11 +198,7 @@ def signal_from_pairs_trading(
     exit_: float = 0.5,
     shift: int = 1,
 ) -> SignalGenerator:
-    """Devuelve un generador de señales para pairs trading (single-asset spread).
-
-    Este generador asume que `prices` es el SPREAD (no el precio del activo).
-    Se usa típicamente pasando el spread ya calculado como `prices`.
-    """
+    """Generador de señales para pairs trading (asume que `prices` es el spread)."""
     from app.core.cointegration import generate_signals, rolling_zscore
 
     def generator(train_prices: pd.Series, full_prices: pd.Series) -> pd.Series:
@@ -269,7 +213,7 @@ def signal_from_momentum(window: int = 60) -> SignalGenerator:
 
     def generator(train_prices: pd.Series, full_prices: pd.Series) -> pd.Series:
         ret = full_prices.pct_change(window)
-        signals = pd.Series(0, index=full_prices.index)
+        signals = pd.Series(0, index=full_prices.index, dtype=int)
         signals[ret > 0] = 1
         signals[ret < 0] = -1
         return signals
@@ -289,7 +233,7 @@ def signal_from_mean_reversion(
         std = full_prices.rolling(window).std().shift(1)
         z = (full_prices - mean) / std
 
-        signals = pd.Series(0, index=full_prices.index)
+        signals = pd.Series(0, index=full_prices.index, dtype=int)
         position = 0
         for i, zi in enumerate(z):
             if np.isnan(zi):
