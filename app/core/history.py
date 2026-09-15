@@ -6,8 +6,11 @@ parámetros y métricas (como JSON).
 
 La base de datos vive en `data/history.db` (excluida de git).
 
+Incluye funciones de comparación para contrastar varias corridas
+lado a lado (ver `compare_runs`).
+
 Uso:
-    from app.core.history import init_db, save_run, list_runs, get_run, delete_run
+    from app.core.history import init_db, save_run, list_runs, compare_runs
 
     init_db()
     run_id = save_run(
@@ -19,17 +22,19 @@ Uso:
         metrics={"sharpe": 1.21, "max_drawdown": -0.083},
         notes="Prueba inicial",
     )
+    comparison = compare_runs([1, 2, 3])
 """
 from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
+
+import pandas as pd
 
 # ============================================================
 #  Configuración
@@ -54,6 +59,29 @@ CREATE INDEX IF NOT EXISTS idx_runs_strategy   ON runs(strategy);
 """
 
 
+# Métricas donde "más alto = mejor" (incluye max_drawdown porque es negativo:
+# -5% es mejor que -20%).
+HIGHER_IS_BETTER: set[str] = {
+    "total_return",
+    "annual_return",
+    "sharpe",
+    "sortino",
+    "calmar",
+    "max_drawdown",
+    "win_rate",
+    "profit_factor",
+    "avg_trade_pnl",
+    "exposure",
+}
+
+# Métricas donde "más bajo = mejor".
+LOWER_IS_BETTER: set[str] = {
+    "turnover",
+    "avg_bars_held",
+    "annual_volatility",
+}
+
+
 # ============================================================
 #  Modelo
 # ============================================================
@@ -71,7 +99,7 @@ class HistoryEntry:
     notes: str | None
 
     @classmethod
-    def from_row(cls, row: sqlite3.Row) -> HistoryEntry:
+    def from_row(cls, row: sqlite3.Row) -> "HistoryEntry":
         """Construye una entrada desde una fila de SQLite."""
         return cls(
             id=row["id"],
@@ -88,6 +116,17 @@ class HistoryEntry:
     def to_dict(self) -> dict[str, Any]:
         """Devuelve la entrada como dict (útil para st.dataframe)."""
         return asdict(self)
+
+
+@dataclass
+class RunComparison:
+    """Resultado de comparar varios runs."""
+    run_ids: list[int]
+    entries: list[HistoryEntry]
+    metrics_table: pd.DataFrame     # index=metric, columns=run_id
+    params_table: pd.DataFrame      # index=param, columns=run_id
+    best_per_metric: dict[str, int]
+    worst_per_metric: dict[str, int]
 
 
 # ============================================================
@@ -156,7 +195,6 @@ def save_run(
                 notes,
             ),
         )
-        assert cur.lastrowid is not None, "lastrowid tras un INSERT exitoso nunca es None"
         return int(cur.lastrowid)
 
 
@@ -207,3 +245,73 @@ def count_runs(db_path: Path | None = None) -> int:
     with _connect(db_path) as conn:
         row = conn.execute("SELECT COUNT(*) AS n FROM runs").fetchone()
     return int(row["n"])
+
+
+# ============================================================
+#  Comparación
+# ============================================================
+def compare_runs(
+    run_ids: list[int],
+    db_path: Path | None = None,
+) -> RunComparison:
+    """Compara varias corridas guardadas.
+
+    Args:
+        run_ids: Lista de IDs a comparar (mínimo 2).
+        db_path: Ruta opcional a la DB.
+
+    Returns:
+        RunComparison con tablas de métricas y parámetros, y los mejores
+        y peores por métrica.
+
+    Raises:
+        ValueError: Si se pasan menos de 2 IDs o alguno no existe.
+    """
+    if len(run_ids) < 2:
+        raise ValueError("Se necesitan al menos 2 runs para comparar.")
+
+    entries: list[HistoryEntry] = []
+    for rid in run_ids:
+        entry = get_run(rid, db_path=db_path)
+        if entry is None:
+            raise ValueError(f"Run #{rid} no existe.")
+        entries.append(entry)
+
+    # --- Tabla de métricas ---
+    metrics_data: dict[int, dict[str, Any]] = {}
+    for e in entries:
+        metrics_data[e.id] = e.metrics or {}
+    metrics_table = pd.DataFrame(metrics_data)
+    metrics_table.index.name = "metric"
+
+    # --- Tabla de parámetros ---
+    params_data: dict[int, dict[str, Any]] = {}
+    for e in entries:
+        params_data[e.id] = e.params or {}
+    params_table = pd.DataFrame(params_data)
+    params_table.index.name = "param"
+
+    # --- Mejor/peor por métrica ---
+    best_per_metric: dict[str, int] = {}
+    worst_per_metric: dict[str, int] = {}
+
+    for metric in metrics_table.index:
+        row = metrics_table.loc[metric].dropna()
+        if len(row) == 0:
+            continue
+        if metric in HIGHER_IS_BETTER:
+            best_per_metric[metric] = int(row.idxmax())
+            worst_per_metric[metric] = int(row.idxmin())
+        elif metric in LOWER_IS_BETTER:
+            best_per_metric[metric] = int(row.idxmin())
+            worst_per_metric[metric] = int(row.idxmax())
+        # métricas neutras no aparecen en best/worst
+
+    return RunComparison(
+        run_ids=list(run_ids),
+        entries=entries,
+        metrics_table=metrics_table,
+        params_table=params_table,
+        best_per_metric=best_per_metric,
+        worst_per_metric=worst_per_metric,
+    )
