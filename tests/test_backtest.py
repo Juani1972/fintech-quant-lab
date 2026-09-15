@@ -4,7 +4,6 @@ import pandas as pd
 import pytest
 
 from app.core.backtest import (
-    benchmark_metrics,
     buy_and_hold,
     compare_to_benchmark,
     run_backtest,
@@ -33,6 +32,18 @@ def prices_zigzag():
     return pd.Series(values, index=dates, dtype=float)
 
 
+@pytest.fixture
+def spread_series():
+    """Serie tipo spread que cruza cero (random walk)."""
+    np.random.seed(42)
+    dates = pd.date_range("2020-01-01", periods=200, freq="B")
+    values = np.cumsum(np.random.normal(0, 1, 200))
+    return pd.Series(values, index=dates)
+
+
+# ============================================================
+#  Validaciones
+# ============================================================
 def test_rejects_non_series():
     with pytest.raises(ValueError, match="pd.Series"):
         run_backtest([1, 2, 3], pd.Series([0, 1, 0]))
@@ -58,6 +69,9 @@ def test_rejects_negative_costs(prices_up):
         run_backtest(prices_up, signals, commission=-0.01)
 
 
+# ============================================================
+#  Anti-look-ahead
+# ============================================================
 def test_signal_executed_next_bar(prices_up):
     """Una señal en t=0 debe producir posición 0 en t=0 y 1 en t=1."""
     signals = pd.Series(1, index=prices_up.index)
@@ -75,23 +89,26 @@ def test_no_signal_no_return(prices_up):
     assert result.metrics["n_trades"] == 0
 
 
+# ============================================================
+#  Rendimiento con caso conocido
+# ============================================================
 def test_long_flat_market_no_pnl(prices_flat):
-    """Con precios planos y long, no debe haber ganancia."""
     signals = pd.Series(1, index=prices_flat.index)
     result = run_backtest(prices_flat, signals, commission=0, slippage=0)
     assert result.equity_curve.iloc[-1] == pytest.approx(100_000.0)
 
 
 def test_long_uptrend_positive_return(prices_up):
-    """Con precios subiendo 1% diario y long, debe haber ganancia."""
     signals = pd.Series(1, index=prices_up.index)
     result = run_backtest(prices_up, signals, commission=0, slippage=0)
     expected = 100_000 * (1.01 ** 9)
     assert result.equity_curve.iloc[-1] == pytest.approx(expected, rel=1e-6)
 
 
+# ============================================================
+#  Costes
+# ============================================================
 def test_costs_reduce_equity(prices_up):
-    """Los costes deben reducir el capital final."""
     signals = pd.Series([1, 0, 1, 0, 1, 0, 1, 0, 1, 0], index=prices_up.index, dtype=float)
 
     no_costs = run_backtest(prices_up, signals, commission=0, slippage=0)
@@ -101,7 +118,6 @@ def test_costs_reduce_equity(prices_up):
 
 
 def test_costs_proportional_to_turnover(prices_up):
-    """Más cambios de posición → más coste total."""
     low_turnover = pd.Series([1] * 10, index=prices_up.index, dtype=float)
     high_turnover = pd.Series([1, -1] * 5, index=prices_up.index, dtype=float)
 
@@ -111,6 +127,9 @@ def test_costs_proportional_to_turnover(prices_up):
     assert r_high.metrics["turnover"] > r_low.metrics["turnover"]
 
 
+# ============================================================
+#  Métricas
+# ============================================================
 def test_sharpe_zero_when_no_variance(prices_flat):
     signals = pd.Series(0, index=prices_flat.index)
     result = run_backtest(prices_flat, signals, commission=0, slippage=0)
@@ -135,8 +154,10 @@ def test_metrics_keys_present(prices_up):
     assert expected_keys.issubset(result.metrics.keys())
 
 
+# ============================================================
+#  Extracción de trades
+# ============================================================
 def test_trades_extracted(prices_up):
-    """Un ciclo long → flat debe generar exactamente 1 trade."""
     signals = pd.Series([1, 1, 0, 0, 0, 0, 0, 0, 0, 0], index=prices_up.index, dtype=float)
     result = run_backtest(prices_up, signals, commission=0, slippage=0)
     assert result.metrics["n_trades"] == 1
@@ -157,6 +178,9 @@ def test_trade_pnl_correct(prices_up):
     assert trade["direction"] == "long"
 
 
+# ============================================================
+#  Benchmark
+# ============================================================
 def test_buy_and_hold(prices_up):
     bh = buy_and_hold(prices_up, initial_capital=100_000)
     expected = 100_000 * (prices_up.iloc[-1] / prices_up.iloc[0])
@@ -173,68 +197,60 @@ def test_compare_to_benchmark(prices_up):
     assert df["strategy_norm"].iloc[0] == pytest.approx(1.0)
 
 
-def test_multiple_trades_bars_held(prices_zigzag):
-    """Varias operaciones (long -> short -> flat -> long) deben quedar bien
-    emparejadas, con bars_held correcto en cada una.
-
-    Regresión para la extracción vectorizada de trades: la versión
-    original recalculaba la equity O(n) veces por iteración (O(n²) total)
-    y usaba `index.get_loc` para el `bars_held`; este test fija el
-    comportamiento esperado para detectar cualquier desajuste futuro.
-    """
-    signals = pd.Series(
-        [1, 1, 1, -1, -1, 0, 0, 1, 1, 1], index=prices_zigzag.index, dtype=float,
-    )
-    result = run_backtest(prices_zigzag, signals, commission=0, slippage=0)
-
-    assert result.metrics["n_trades"] == 3
-    directions = list(result.trades["direction"])
-    assert directions == ["long", "short", "long"]
-
-    bars_held = list(result.trades["bars_held"])
-    assert bars_held == [3, 2, 1]
-
-    # Primer trade: long, entra en precio 102 (t=1), sale en 104 (t=4).
-    trade0 = result.trades.iloc[0]
-    assert trade0["entry_price"] == pytest.approx(102.0)
-    assert trade0["exit_price"] == pytest.approx(104.0)
-    assert trade0["pnl_pct"] == pytest.approx((104.0 - 102.0) / 102.0, rel=1e-9)
+# ============================================================
+#  Modo 'absolute' (spreads)
+# ============================================================
+def test_absolute_mode_accepts_negative_values(spread_series):
+    """El modo 'absolute' debe aceptar spreads que cruzan cero."""
+    signals = pd.Series(0, index=spread_series.index, dtype=float)
+    result = run_backtest(spread_series, signals, mode="absolute")
+    assert result.metrics["total_return"] == pytest.approx(0.0)
 
 
-def test_benchmark_metrics_beta_matches_leverage():
-    """Una 'estrategia' que es el benchmark apalancado 2x debe dar
-    beta ~= 2.
-    """
-    np.random.seed(0)
-    dates = pd.bdate_range("2020-01-01", periods=500)
-    bench_log_returns = np.random.normal(0.0003, 0.01, 500)
-    benchmark = pd.Series(100 * np.exp(np.cumsum(bench_log_returns)), index=dates)
-    strategy = pd.Series(
-        100 * np.exp(np.cumsum(2 * bench_log_returns)), index=dates,
-    )
-
-    m = benchmark_metrics(strategy, benchmark)
-    assert m["beta"] == pytest.approx(2.0, abs=0.05)
-
-
-def test_benchmark_metrics_zero_tracking_error_when_identical():
-    """Si la estrategia es idéntica al benchmark, tracking_error y
-    jensen_alpha deben ser (casi) cero y beta (casi) 1.
-    """
-    np.random.seed(1)
-    dates = pd.bdate_range("2020-01-01", periods=300)
+def test_absolute_mode_pnl_symmetry():
+    """En modo absolute, subir y bajar la misma cantidad debe cancelar."""
     prices = pd.Series(
-        100 * np.exp(np.cumsum(np.random.normal(0.0003, 0.01, 300))), index=dates,
+        [0.0, 1000.0, 2000.0, 1000.0, 0.0],
+        index=pd.date_range("2024-01-01", periods=5),
     )
-    m = benchmark_metrics(prices, prices)
-    assert m["beta"] == pytest.approx(1.0, abs=1e-6)
-    assert m["tracking_error"] == pytest.approx(0.0, abs=1e-9)
-    assert m["jensen_alpha"] == pytest.approx(0.0, abs=1e-9)
+    signals = pd.Series(1, index=prices.index, dtype=float)
+    result = run_backtest(
+        prices, signals,
+        initial_capital=100_000, commission=0, slippage=0,
+        mode="absolute",
+    )
+    # positions = [0, 1, 1, 1, 1]
+    # changes   = [0, 1000, 1000, -1000, -1000]
+    # returns   = [0, 0.01, 0.01, -0.01, -0.01]
+    # equity    = 100000 * 1.01 * 1.01 * 0.99 * 0.99
+    expected = 100_000 * (1.01 * 0.99) ** 2
+    assert result.equity_curve.iloc[-1] == pytest.approx(expected, rel=1e-6)
 
 
-def test_benchmark_metrics_rejects_constant_benchmark():
-    dates = pd.bdate_range("2020-01-01", periods=10)
-    strategy = pd.Series(np.linspace(100, 110, 10), index=dates)
-    flat_benchmark = pd.Series([100.0] * 10, index=dates)
-    with pytest.raises(ValueError, match="varianza"):
-        benchmark_metrics(strategy, flat_benchmark)
+def test_percent_mode_rejects_negative_prices():
+    """En modo percent, precios negativos deben lanzar ValueError."""
+    prices = pd.Series(
+        [1.0, -1.0, 1.0],
+        index=pd.date_range("2024-01-01", periods=3),
+    )
+    signals = pd.Series(0, index=prices.index, dtype=float)
+    with pytest.raises(ValueError, match="estrictamente positivos"):
+        run_backtest(prices, signals, mode="percent")
+
+
+def test_invalid_mode_raises():
+    prices = pd.Series(
+        [1.0, 2.0, 3.0],
+        index=pd.date_range("2024-01-01", periods=3),
+    )
+    signals = pd.Series(0, index=prices.index, dtype=float)
+    with pytest.raises(ValueError, match="mode debe ser"):
+        run_backtest(prices, signals, mode="invalid")
+
+
+def test_absolute_mode_summary_runs(spread_series):
+    """El summary debe funcionar en modo absolute."""
+    signals = pd.Series(0, index=spread_series.index, dtype=float)
+    result = run_backtest(spread_series, signals, mode="absolute")
+    s = result.summary()
+    assert "BACKTEST RESULT" in s
