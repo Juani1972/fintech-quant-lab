@@ -14,7 +14,6 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
-
 BacktestMode = Literal["percent", "absolute"]
 
 
@@ -26,7 +25,7 @@ class BacktestResult:
     positions: pd.Series
     trades: pd.DataFrame
     metrics: dict[str, float] = field(default_factory=dict)
-    params: dict[str, float] = field(default_factory=dict)
+    params: dict[str, float | str] = field(default_factory=dict)
 
     def summary(self) -> str:
         """Devuelve un resumen legible de las métricas."""
@@ -121,10 +120,8 @@ def run_backtest(
     # --- Curva de capital ---
     equity = initial_capital * (1 + net_returns).cumprod()
 
-    # --- Trades ---
-    trades = _extract_trades(
-        prices_, positions, net_returns, initial_capital, mode=mode,
-    )
+    # --- Trades (emparejar entradas con salidas) ---
+    trades = _extract_trades(prices_, positions, equity, initial_capital, mode=mode)
 
     # --- Métricas ---
     metrics = _compute_metrics(
@@ -137,7 +134,7 @@ def run_backtest(
         initial_capital=initial_capital,
     )
 
-    params = {
+    params: dict[str, float | str] = {
         "initial_capital": initial_capital,
         "commission": commission,
         "slippage": slippage,
@@ -159,11 +156,20 @@ def run_backtest(
 def _extract_trades(
     prices: pd.Series,
     positions: pd.Series,
-    net_returns: pd.Series,
+    equity: pd.Series,
     initial_capital: float,
     mode: BacktestMode = "percent",
 ) -> pd.DataFrame:
-    """Empareja entradas y salidas para construir la tabla de operaciones."""
+    """Empareja entradas y salidas para construir la tabla de operaciones.
+
+    Una operación empieza cuando la posición pasa de 0 a ±1 y termina
+    cuando vuelve a 0 o cambia de signo.
+
+    `equity` debe ser la curva de capital ya calculada por el llamante
+    (``initial_capital * (1 + net_returns).cumprod()``): se reutiliza en
+    vez de recalcularse en cada iteración, lo que evita un coste O(n²)
+    en backtests largos (walk-forward, grid search).
+    """
     empty = pd.DataFrame(
         columns=["entry_date", "exit_date", "direction", "entry_price",
                  "exit_price", "pnl_pct", "pnl_abs", "bars_held"]
@@ -171,62 +177,68 @@ def _extract_trades(
     if positions.abs().sum() == 0:
         return empty
 
+    def _pnl_pct(exit_price: float, entry_p: float, pos: int) -> float:
+        if mode == "percent":
+            return (exit_price - entry_p) / entry_p * pos
+        # absolute: P&L relativo al capital inicial (adecuado para spreads
+        # que pueden cruzar cero, donde un % sobre entry_p no tiene sentido)
+        return (exit_price - entry_p) * pos / initial_capital
+
+    price_vals = prices.to_numpy()
+    equity_vals = equity.to_numpy()
+    pos_vals = positions.to_numpy()
+    dates = positions.index
+
     trades = []
     current_pos = 0
-    entry_date = None
-    entry_price = None
+    entry_idx = None
+    entry_price: float | None = None
     entry_equity = None
 
-    def _pnl_pct(price: float, entry_p: float, pos: int) -> float:
-        if mode == "percent":
-            return (price - entry_p) / entry_p * pos
-        # absolute: P&L relativo al capital inicial
-        return (price - entry_p) * pos / initial_capital
-
-    for i, (date, pos) in enumerate(positions.items()):
-        price = prices.loc[date]
-        equity = initial_capital * (1 + net_returns.iloc[: i + 1]).prod()
+    for i in range(len(positions)):
+        pos = pos_vals[i]
+        price = price_vals[i]
+        equity_i = equity_vals[i]
 
         if pos != current_pos:
-            # Cerrar posición anterior
-            if current_pos != 0 and entry_date is not None:
-                pnl_abs = equity - entry_equity
+            if current_pos != 0 and entry_idx is not None:
+                assert entry_price is not None, "entry_price se fija junto con entry_idx"
+                pnl_abs = equity_i - entry_equity
                 pnl_pct = _pnl_pct(price, entry_price, current_pos)
                 trades.append({
-                    "entry_date": entry_date,
-                    "exit_date": date,
+                    "entry_date": dates[entry_idx],
+                    "exit_date": dates[i],
                     "direction": "long" if current_pos > 0 else "short",
                     "entry_price": entry_price,
                     "exit_price": price,
                     "pnl_pct": pnl_pct,
                     "pnl_abs": pnl_abs,
-                    "bars_held": i - positions.index.get_loc(entry_date),
+                    "bars_held": i - entry_idx,
                 })
 
-            # Abrir nueva posición
             if pos != 0:
-                entry_date = date
+                entry_idx = i
                 entry_price = price
-                entry_equity = equity
+                entry_equity = equity_i
 
             current_pos = pos
 
-    # Cerrar posición abierta al final
-    if current_pos != 0 and entry_date is not None:
-        last_date = positions.index[-1]
-        last_price = prices.loc[last_date]
-        last_equity = initial_capital * (1 + net_returns).prod()
+    if current_pos != 0 and entry_idx is not None:
+        assert entry_price is not None, "entry_price se fija junto con entry_idx"
+        last_idx = len(positions) - 1
+        last_price = price_vals[last_idx]
+        last_equity = equity_vals[last_idx]
         pnl_abs = last_equity - entry_equity
         pnl_pct = _pnl_pct(last_price, entry_price, current_pos)
         trades.append({
-            "entry_date": entry_date,
-            "exit_date": last_date,
+            "entry_date": dates[entry_idx],
+            "exit_date": dates[last_idx],
             "direction": "long" if current_pos > 0 else "short",
             "entry_price": entry_price,
             "exit_price": last_price,
             "pnl_pct": pnl_pct,
             "pnl_abs": pnl_abs,
-            "bars_held": len(positions) - positions.index.get_loc(entry_date) - 1,
+            "bars_held": last_idx - entry_idx,
         })
 
     return pd.DataFrame(trades)
@@ -318,3 +330,65 @@ def compare_to_benchmark(
     df["strategy_norm"] = df["strategy"] / df["strategy"].iloc[0]
     df["benchmark_norm"] = df["benchmark"] / df["benchmark"].iloc[0]
     return df
+
+
+def benchmark_metrics(
+    strategy_equity: pd.Series,
+    benchmark_equity: pd.Series,
+    periods_per_year: int = 252,
+    risk_free_rate: float = 0.0,
+) -> dict[str, float]:
+    """Métricas de la estrategia relativas a un benchmark.
+
+    `compare_to_benchmark` solo normaliza las dos curvas para dibujarlas
+    juntas; esta función añade las métricas que de verdad responden a
+    "¿esta estrategia bate al benchmark, y cómo de arriesgado es ese
+    exceso de retorno?":
+
+    - beta: sensibilidad de los retornos de la estrategia a los del
+      benchmark (regresión OLS simple retorno_estrategia ~ retorno_benchmark).
+    - jensen_alpha: exceso de retorno anualizado de la estrategia sobre
+      lo que predeciría el CAPM dado su beta.
+    - tracking_error: desviación estándar anualizada de la diferencia
+      de retornos (estrategia - benchmark).
+    - information_ratio: exceso de retorno anualizado sobre el
+      benchmark dividido por el tracking error.
+
+    Raises:
+        ValueError: Si tras alinear ambas series quedan menos de 3
+            observaciones, o si el benchmark no tiene varianza.
+    """
+    df = pd.concat(
+        [strategy_equity.rename("strategy"), benchmark_equity.rename("benchmark")],
+        axis=1,
+    ).dropna()
+    if len(df) < 3:
+        raise ValueError("Se necesitan al menos 3 observaciones alineadas.")
+
+    r_s = df["strategy"].pct_change().dropna()
+    r_b = df["benchmark"].pct_change().dropna()
+    r_s, r_b = r_s.align(r_b, join="inner")
+
+    var_b = r_b.var(ddof=1)
+    if var_b == 0 or not np.isfinite(var_b):
+        raise ValueError("El benchmark no tiene varianza; beta no está definido.")
+
+    beta = float(np.cov(r_s, r_b, ddof=1)[0, 1] / var_b)
+
+    rf_period = risk_free_rate / periods_per_year
+    alpha_period = float((r_s.mean() - rf_period) - beta * (r_b.mean() - rf_period))
+    jensen_alpha = alpha_period * periods_per_year
+
+    excess = r_s - r_b
+    tracking_error = float(excess.std(ddof=1) * np.sqrt(periods_per_year))
+    information_ratio = (
+        float(excess.mean() / excess.std(ddof=1) * np.sqrt(periods_per_year))
+        if excess.std(ddof=1) > 0 else float("nan")
+    )
+
+    return {
+        "beta": beta,
+        "jensen_alpha": jensen_alpha,
+        "tracking_error": tracking_error,
+        "information_ratio": information_ratio,
+    }

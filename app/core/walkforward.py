@@ -10,14 +10,16 @@ generaliza.
 """
 from __future__ import annotations
 
+import logging
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 import numpy as np
 import pandas as pd
 
 from app.core.backtest import BacktestMode, run_backtest
 
+logger = logging.getLogger(__name__)
 
 SignalGenerator = Callable[[pd.Series, pd.Series], pd.Series]
 
@@ -49,12 +51,13 @@ def walk_forward_analysis(
     train_size: int = 504,
     test_size: int = 126,
     step: int | None = None,
+    embargo: int = 0,
     initial_capital: float = 100_000.0,
     commission: float = 0.001,
     slippage: float = 0.0005,
     mode: BacktestMode = "percent",
 ) -> WalkForwardResult:
-    """Ejecuta walk-forward analysis.
+    """Ejecuta walk-forward analysis (rolling, no anchored/expanding).
 
     Args:
         prices: Serie de precios o spread.
@@ -62,6 +65,9 @@ def walk_forward_analysis(
         train_size: Nº de barras de la ventana de entrenamiento.
         test_size: Nº de barras de la ventana de test.
         step: Desplazamiento entre ventanas. Si None, usa test_size.
+        embargo: Nº de barras entre el final del tramo de entrenamiento y
+            el inicio del test, para reducir la fuga de información entre
+            ambos tramos. Por defecto 0 (tramos contiguos).
         initial_capital: Capital para cada backtest OOS.
         commission: Comisión por operación.
         slippage: Slippage por operación.
@@ -75,30 +81,50 @@ def walk_forward_analysis(
     """
     if step is None:
         step = test_size
+    if embargo < 0:
+        raise ValueError(f"embargo debe ser >= 0 (se dio {embargo}).")
 
     n = len(prices)
-    if n < train_size + test_size:
+    if n < train_size + embargo + test_size:
         raise ValueError(
             f"Datos insuficientes: {n} barras. "
-            f"Se necesitan al menos {train_size + test_size}."
+            f"Se necesitan al menos {train_size + embargo + test_size} "
+            f"(train_size + embargo + test_size)."
         )
 
     windows: list[WalkForwardWindow] = []
     oos_equity_parts: list[pd.Series] = []
+    n_windows_skipped = 0
 
     start = 0
-    while start + train_size + test_size <= n:
+    while start + train_size + embargo + test_size <= n:
         train_slice = prices.iloc[start : start + train_size]
-        test_slice = prices.iloc[start + train_size : start + train_size + test_size]
-        visible = prices.iloc[: start + train_size + test_size]
+        test_start = start + train_size + embargo
+        test_slice = prices.iloc[test_start : test_start + test_size]
+        visible = prices.iloc[: test_start + test_size]
 
         try:
             signals_full = signal_generator(train_slice, visible)
         except Exception:
+            logger.warning(
+                "Ventana walk-forward descartada (train=%s..%s, test=%s..%s): "
+                "signal_generator lanzó una excepción.",
+                train_slice.index[0], train_slice.index[-1],
+                test_slice.index[0], test_slice.index[-1],
+                exc_info=True,
+            )
+            n_windows_skipped += 1
             start += step
             continue
 
         if signals_full is None or len(signals_full) == 0:
+            logger.warning(
+                "Ventana walk-forward descartada (train=%s..%s, test=%s..%s): "
+                "signal_generator devolvió señales vacías.",
+                train_slice.index[0], train_slice.index[-1],
+                test_slice.index[0], test_slice.index[-1],
+            )
+            n_windows_skipped += 1
             start += step
             continue
 
@@ -131,7 +157,11 @@ def walk_forward_analysis(
         start += step
 
     if not windows:
-        raise ValueError("No se pudo completar ninguna ventana walk-forward.")
+        raise ValueError(
+            f"No se pudo completar ninguna ventana walk-forward "
+            f"({n_windows_skipped} descartadas por errores o señales vacías; "
+            "revisa los logs para más detalle)."
+        )
 
     oos_equity_concat = _compound_equity(oos_equity_parts, initial_capital)
     is_agg = _aggregate_metrics([w.is_metrics for w in windows])
@@ -146,7 +176,9 @@ def walk_forward_analysis(
             "train_size": train_size,
             "test_size": test_size,
             "step": step,
+            "embargo": embargo,
             "n_windows": len(windows),
+            "n_windows_skipped": n_windows_skipped,
             "initial_capital": initial_capital,
             "commission": commission,
             "slippage": slippage,
