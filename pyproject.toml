@@ -8,7 +8,7 @@ license = { text = "MIT" }
 authors = [
     { name = "Juan Orozco", email = "juani1972@users.noreply.github.com" }
 ]
-keywords = ["finance", "quant", "garch", "cointegration", "backtesting", "walk-forward", "streamlit"]
+keywords = ["finance", "quant", "garch", "cointegration", "backtesting", "walk-forward", "streamlit", "hmm", "kalman"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Financial and Insurance Industry",
@@ -33,6 +33,7 @@ dependencies = [
     "pandas-datareader>=0.10.0",
     "matplotlib>=3.8.0",
     "plotly>=5.18.0",
+    "hmmlearn>=0.3.2",
 ]
 
 [project.optional-dependencies]
@@ -106,7 +107,7 @@ ignore = ["E501", "B008"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101"]
-"notebooks/*" = ["B018"]  # expresión "suelta" al final de celda = salida enriquecida (idiom de notebook)
+"notebooks/*" = ["B018"]
 
 # ============================================================
 #  mypy
