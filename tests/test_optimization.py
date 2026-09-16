@@ -7,8 +7,27 @@ from app.core.optimization import (
     _expand_grid,
     deflated_sharpe_ratio,
     grid_search,
+    grid_search_walkforward,
     heatmap_data,
 )
+
+
+@pytest.fixture
+def spread_series():
+    """Spread sintético que cruza cero (como un spread de cointegración real)."""
+    np.random.seed(7)
+    dates = pd.date_range("2020-01-01", periods=700, freq="B")
+    return pd.Series(np.cumsum(np.random.normal(0, 0.05, 700)), index=dates)
+
+
+def _zscore_factory(prices, params):
+    window = params["window"]
+    roll = prices.rolling(window)
+    z = (prices - roll.mean()) / roll.std()
+    s = pd.Series(0, index=prices.index)
+    s[z > 1.0] = -1
+    s[z < -1.0] = 1
+    return s
 
 
 @pytest.fixture
@@ -139,3 +158,52 @@ def test_deflated_sharpe_ratio_requires_sharpe_objective(prices_series):
     )
     with pytest.raises(ValueError, match="objective='sharpe'"):
         deflated_sharpe_ratio(result, prices_series.pct_change().dropna())
+
+
+def test_grid_search_absolute_mode_on_spread(spread_series):
+    """Regresión: grid_search debe poder optimizar sobre un spread que
+    cruza cero (mode='absolute'), no solo sobre precios positivos.
+
+    Antes de añadir el parámetro `mode`, esta llamada descartaba TODAS
+    las combinaciones del grid con
+    "ValueError: los precios deben ser estrictamente positivos",
+    porque `grid_search` no tenía forma de pasarle `mode='absolute'`
+    a `run_backtest` internamente.
+    """
+    result = grid_search(
+        prices=spread_series,
+        signal_factory=_zscore_factory,
+        param_grid={"window": [20, 40, 60]},
+        objective="sharpe",
+        mode="absolute",
+    )
+    assert result.grid["sharpe"].notna().any(), (
+        "Todas las combinaciones fallaron -- mode='absolute' no se está "
+        "propagando a run_backtest."
+    )
+
+
+def test_grid_search_walkforward_absolute_mode_on_spread(spread_series):
+    """Regresión equivalente a la anterior, pero para
+    grid_search_walkforward -- que es la función que usa de verdad la
+    página de Optimización para 'Pairs Trading (spread)'. Tenía el
+    mismo bug: no reenviaba `mode` a `walk_forward_analysis`.
+    """
+    def factory(params):
+        def gen(train, full):
+            return _zscore_factory(full, params)
+        return gen
+
+    result = grid_search_walkforward(
+        prices=spread_series,
+        generator_factory=factory,
+        param_grid={"window": [20, 40, 60]},
+        objective="sharpe",
+        train_size=300,
+        test_size=100,
+        mode="absolute",
+    )
+    assert result.grid["oos_sharpe"].notna().any(), (
+        "Todas las combinaciones fallaron -- mode='absolute' no se está "
+        "propagando a walk_forward_analysis."
+    )
