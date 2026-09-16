@@ -1,13 +1,13 @@
 """Página de configuración y prueba de alertas."""
-import os
+from typing import cast
 
 import pandas as pd
 import streamlit as st
 
 from app.core.alerts import (
-    Alert,
     AlertDispatcher,
     AlertSeverity,
+    Comparator,
     check_custom_rule,
     default_backtest_rules,
     list_channels,
@@ -162,7 +162,7 @@ if st.button("🔍 Evaluar y enviar si se cumple"):
     alert = check_custom_rule(
         metrics=test_metrics,
         metric=rule_metric,
-        comparator=rule_comparator,
+        comparator=cast(Comparator, rule_comparator),
         threshold=rule_threshold,
         severity=AlertSeverity(rule_severity),
     )
@@ -200,7 +200,7 @@ else:
             "Título": a.title,
             "Mensaje": a.message,
             "Métrica": a.metric or "—",
-            "Valor": a.value if a.value is not None else "—",
+            "Valor": str(a.value) if a.value is not None else "—",
         }
         for a in history
     ]
@@ -245,3 +245,27 @@ with st.expander("🔐 Variables de entorno"):
 
         # Slack
         FQL_SLACK_WEBHOOK=https://hooks.slack.com/services/...
+        ```
+
+        **Nunca** subas credenciales reales a git — usa variables de
+        entorno o `.streamlit/secrets.toml` (también excluido de git;
+        ver `streamlit/secrets.toml.example` para la plantilla).
+        """
+    )
+
+with st.expander("📱 Cómo obtener las credenciales de cada canal"):
+    st.markdown(
+        """
+        - **Email (Gmail)**: activa la verificación en dos pasos y genera
+          una ["contraseña de aplicación"](https://myaccount.google.com/apppasswords) —
+          no uses tu contraseña normal de Gmail.
+        - **Telegram**: habla con [@BotFather](https://t.me/BotFather) para
+          crear un bot y obtener el token; envía un mensaje a tu bot y
+          consulta `https://api.telegram.org/bot<TOKEN>/getUpdates` para
+          ver tu `chat_id`.
+        - **Slack**: crea un ["Incoming Webhook"](https://api.slack.com/messaging/webhooks)
+          en la configuración de tu workspace.
+        """
+    )
+
+footer()

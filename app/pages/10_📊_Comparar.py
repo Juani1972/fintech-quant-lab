@@ -6,7 +6,6 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from app.core.history import (
-    HIGHER_IS_BETTER,
     LOWER_IS_BETTER,
     compare_runs,
     init_db,
@@ -57,12 +56,13 @@ if len(available) < 2:
 
 # --- Formatear opciones del multiselect ---
 options_labels = {}
-for e in available:
+for entry_opt in available:
+    assert entry_opt.id is not None, "entry_opt viene de list_runs(), siempre tiene id"
     label = (
-        f"#{e.id} · {e.strategy} · {', '.join(e.tickers)} · "
-        f"{e.created_at[:10]} · Sharpe={e.metrics.get('sharpe', float('nan')):.2f}"
+        f"#{entry_opt.id} · {entry_opt.strategy} · {', '.join(entry_opt.tickers)} · "
+        f"{entry_opt.created_at[:10]} · Sharpe={entry_opt.metrics.get('sharpe', float('nan')):.2f}"
     )
-    options_labels[label] = e.id
+    options_labels[label] = entry_opt.id
 
 with st.sidebar:
     st.markdown("---")
@@ -107,14 +107,14 @@ except ValueError as e:
 section("📌 Runs seleccionados")
 
 summary_rows = []
-for e in comparison.entries:
+for entry_row in comparison.entries:
     summary_rows.append({
-        "ID": e.id,
-        "Estrategia": e.strategy,
-        "Tickers": ", ".join(e.tickers),
-        "Rango": f"{e.start_date} → {e.end_date}",
-        "Creado": e.created_at[:19].replace("T", " "),
-        "Notas": e.notes or "",
+        "ID": entry_row.id,
+        "Estrategia": entry_row.strategy,
+        "Tickers": ", ".join(entry_row.tickers),
+        "Rango": f"{entry_row.start_date} → {entry_row.end_date}",
+        "Creado": entry_row.created_at[:19].replace("T", " "),
+        "Notas": entry_row.notes or "",
     })
 st.dataframe(
     pd.DataFrame(summary_rows),

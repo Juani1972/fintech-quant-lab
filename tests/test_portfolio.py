@@ -25,7 +25,7 @@ def _synthetic_returns(n=250, tickers=("A", "B", "C", "D"), seed=7) -> pd.DataFr
     rng = np.random.default_rng(seed)
     idx = pd.date_range("2022-01-01", periods=n, freq="B")
     vols = np.linspace(0.005, 0.02, len(tickers))
-    data = {t: rng.normal(0.0003, v, n) for t, v in zip(tickers, vols)}
+    data = {t: rng.normal(0.0003, v, n) for t, v in zip(tickers, vols, strict=True)}
     return pd.DataFrame(data, index=idx)
 
 

@@ -17,6 +17,8 @@ Uso típico:
 
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 import pandas as pd
 
@@ -172,7 +174,6 @@ def risk_parity_weights(
 def _get_quasi_diag(link: np.ndarray) -> list[int]:
     """Ordena los activos según el dendrograma (quasi-diagonalización)."""
     link = link.astype(int)
-    n = link[-1, 3]
     sort_ix = pd.Series([link[-1, 0], link[-1, 1]])
 
     num_items = link[-1, 3]
@@ -186,7 +187,7 @@ def _get_quasi_diag(link: np.ndarray) -> list[int]:
         sort_ix = pd.concat([sort_ix, df1]).sort_index()
         sort_ix.index = range(sort_ix.shape[0])
 
-    return sort_ix.tolist()
+    return cast(list[int], sort_ix.tolist())
 
 
 def _get_cluster_var(cov: pd.DataFrame, items: list) -> float:

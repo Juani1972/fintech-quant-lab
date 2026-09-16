@@ -26,8 +26,9 @@ Uso típico:
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Literal
+from typing import Any, Literal, cast
 
 
 class PaperTradeError(Exception):
@@ -79,7 +80,7 @@ class PaperAccount:
 
     def get_account(self) -> dict:
         """Devuelve el estado de la cuenta (equity, cash, buying_power...)."""
-        return self._request("GET", "/v2/account")
+        return cast(dict, self._request("GET", "/v2/account"))
 
     def get_positions(self) -> list[dict]:
         """Devuelve la lista de posiciones abiertas."""
@@ -129,7 +130,7 @@ class PaperAccount:
         if limit_price is not None:
             payload["limit_price"] = str(limit_price)
 
-        return self._request("POST", "/v2/orders", json=payload)
+        return cast(dict, self._request("POST", "/v2/orders", json=payload))
 
     def cancel_all(self) -> int:
         """Cancela todas las órdenes abiertas. Devuelve cuántas se cancelaron."""
@@ -210,7 +211,7 @@ class StrategyRunner:
             if abs(delta) < 1e-6:
                 continue
 
-            side = "buy" if delta > 0 else "sell"
+            side = cast(Literal["buy", "sell"], "buy" if delta > 0 else "sell")
             order = self.account.submit_order(symbol=symbol, qty=abs(delta), side=side)
             orders.append(order)
 

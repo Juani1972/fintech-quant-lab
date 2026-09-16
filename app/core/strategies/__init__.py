@@ -21,6 +21,8 @@ Uso típico:
 
 from __future__ import annotations
 
+from typing import cast
+
 from .base import Strategy, StrategyError
 from .carry_trade import CarryTrade
 from .cross_sectional_momentum import CrossSectionalMomentum
@@ -62,7 +64,7 @@ def get_strategy(name: str, **kwargs) -> Strategy:
         disponibles = ", ".join(sorted(_STRATEGIES))
         raise StrategyError(f"Estrategia desconocida '{name}'. Disponibles: {disponibles}")
 
-    return strategy_cls(**kwargs)
+    return cast(Strategy, strategy_cls(**kwargs))
 
 
 def list_strategies() -> list[str]:

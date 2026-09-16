@@ -17,6 +17,8 @@ arch==7.0.0
 pandas-datareader==0.10.0
 matplotlib==3.9.0
 plotly==5.22.0
+hmmlearn==0.3.3
+requests==2.33.1
 
 # Dev
 pytest==8.2.2

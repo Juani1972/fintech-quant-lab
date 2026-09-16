@@ -35,6 +35,7 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import cast
 
 import pandas as pd
 
@@ -65,7 +66,7 @@ class Experiment:
     def results(self) -> dict:
         """Carga y devuelve las métricas guardadas para este experimento."""
         with open(self.results_path, encoding="utf-8") as fh:
-            return json.load(fh)
+            return cast(dict, json.load(fh))
 
     @property
     def data(self) -> pd.DataFrame:

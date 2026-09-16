@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
 
 import pandas as pd
 
@@ -264,7 +264,7 @@ def get_provider(name: str, **kwargs) -> MarketDataProvider:
         disponibles = ", ".join(sorted(_PROVIDERS))
         raise ProviderError(f"Proveedor desconocido '{name}'. Disponibles: {disponibles}")
 
-    return provider_cls(**kwargs)
+    return cast(MarketDataProvider, provider_cls(**kwargs))
 
 
 def _extract_close(raw: pd.DataFrame, tickers: list[str]) -> pd.DataFrame:

@@ -32,7 +32,7 @@ import json
 import platform
 import uuid
 from dataclasses import asdict, dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 
@@ -55,7 +55,7 @@ class LicenseInfo:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict) -> "LicenseInfo":
+    def from_dict(cls, data: dict) -> LicenseInfo:
         return cls(**data)
 
     @property

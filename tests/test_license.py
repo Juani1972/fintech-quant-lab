@@ -75,25 +75,31 @@ class TestVerifyLicense:
         fake_response.json.return_value = {"valid": False, "reason": "clave revocada"}
         fake_response.raise_for_status.return_value = None
 
-        with patch("requests.post", return_value=fake_response):
-            with pytest.raises(LicenseError, match="clave revocada"):
-                verify_license("ABCD-1234", "https://licencias.example.com")
+        with (
+            patch("requests.post", return_value=fake_response),
+            pytest.raises(LicenseError, match="clave revocada"),
+        ):
+            verify_license("ABCD-1234", "https://licencias.example.com")
 
     def test_missing_expiration_raises(self):
         fake_response = MagicMock()
         fake_response.json.return_value = {"valid": True}
         fake_response.raise_for_status.return_value = None
 
-        with patch("requests.post", return_value=fake_response):
-            with pytest.raises(LicenseError, match="fecha de expiración"):
-                verify_license("ABCD-1234", "https://licencias.example.com")
+        with (
+            patch("requests.post", return_value=fake_response),
+            pytest.raises(LicenseError, match="fecha de expiración"),
+        ):
+            verify_license("ABCD-1234", "https://licencias.example.com")
 
     def test_network_error_raises_license_error(self):
         import requests
 
-        with patch("requests.post", side_effect=requests.ConnectionError("sin red")):
-            with pytest.raises(LicenseError, match="No se pudo contactar"):
-                verify_license("ABCD-1234", "https://licencias.example.com")
+        with (
+            patch("requests.post", side_effect=requests.ConnectionError("sin red")),
+            pytest.raises(LicenseError, match="No se pudo contactar"),
+        ):
+            verify_license("ABCD-1234", "https://licencias.example.com")
 
     def test_trailing_slash_in_server_url_is_handled(self):
         fake_response = MagicMock()
