@@ -131,3 +131,50 @@ def data_quality_report(prices: pd.DataFrame) -> dict[str, object]:
         report["extreme_returns"] = 0
 
     return report
+
+
+@cached(ttl=CACHE_TTL, show_spinner=False)
+def search_ticker(query: str, max_results: int = 8) -> list[dict[str, str]]:
+    """Busca tickers por nombre de empresa (o símbolo parcial) usando el
+    buscador de Yahoo Finance.
+
+    Pensado para el selector de tickers de la interfaz: el usuario
+    escribe "Apple" o "Inditex" en vez de tener que saber de antemano
+    que el ticker es "AAPL" o "ITX.MC" -- ver también docs/MERCADOS.md
+    para buscar manualmente si esto no encuentra lo que buscas (algunos
+    resultados menos comunes, ADRs, etc. pueden no aparecer aquí).
+
+    Args:
+        query: Nombre de empresa o símbolo a buscar. Cadenas muy cortas
+            (menos de 2 caracteres) se rechazan para evitar búsquedas
+            demasiado amplias/ruidosas.
+        max_results: Nº máximo de resultados a devolver.
+
+    Returns:
+        Lista de dicts con claves "symbol", "name", "exchange",
+        "type" (p. ej. "EQUITY", "ETF"...). Vacía si no hay resultados.
+
+    Raises:
+        ValueError: Si `query` está vacío o es demasiado corto.
+        ConnectionError: Si falla la búsqueda contra Yahoo Finance.
+    """
+    query = query.strip()
+    if len(query) < 2:
+        raise ValueError("Escribe al menos 2 caracteres para buscar.")
+
+    try:
+        result = yf.Search(query, max_results=max_results, news_count=0, lists_count=0)
+    except Exception as exc:
+        raise ConnectionError(f"No se pudo buscar '{query}' en Yahoo Finance: {exc}") from exc
+
+    quotes = result.quotes or []
+    return [
+        {
+            "symbol": q.get("symbol", ""),
+            "name": q.get("shortname") or q.get("longname") or "",
+            "exchange": q.get("exchange", ""),
+            "type": q.get("quoteType", ""),
+        }
+        for q in quotes
+        if q.get("symbol")
+    ]
