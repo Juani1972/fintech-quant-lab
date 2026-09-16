@@ -14,6 +14,7 @@ from app.config import (
     DEFAULT_TICKERS,
     PAGES,
 )
+from app.core.data_loader import search_ticker
 from app.core.universe import list_universes, universe_to_string
 from app.styles import (
     callout,
@@ -59,6 +60,45 @@ def _on_universe_change() -> None:
 with st.sidebar:
     st.markdown("## ⚙️ Parámetros globales")
     st.caption("Compartidos entre todas las páginas.")
+
+    # --- Buscador de empresa por nombre ---
+    with st.expander("🔍 Buscar empresa por nombre"):
+        st.caption("Escribe el nombre y toca el resultado para añadirlo a Tickers.")
+        search_query = st.text_input(
+            "Nombre de la empresa",
+            placeholder="Apple, Inditex, Toyota...",
+            key="_ticker_search_query",
+            label_visibility="collapsed",
+        )
+        if search_query and len(search_query.strip()) >= 2:
+            try:
+                results = search_ticker(search_query)
+            except ConnectionError as e:
+                results = []
+                st.caption(f"⚠️ {e}")
+            except ValueError:
+                results = []
+
+            if results:
+                for r in results:
+                    label = f"{r['symbol']} — {r['name']}" if r["name"] else r["symbol"]
+                    if r["exchange"]:
+                        label += f" ({r['exchange']})"
+                    if st.button(label, key=f"_add_ticker_{r['symbol']}", use_container_width=True):
+                        current = [
+                            t.strip() for t in
+                            st.session_state.get("global_tickers", "").split(",")
+                            if t.strip()
+                        ]
+                        if r["symbol"] not in current:
+                            current.append(r["symbol"])
+                        st.session_state["global_tickers"] = ", ".join(current)
+                        st.rerun()
+            elif len(search_query.strip()) >= 2:
+                st.caption(
+                    "Sin resultados. Prueba con otro nombre, o consulta "
+                    "docs/MERCADOS.md para buscar manualmente."
+                )
 
     # --- Selector de universo ---
     st.selectbox(
