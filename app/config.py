@@ -78,4 +78,53 @@ PAGES = [
         "description": "Monte Carlo, block bootstrap, sensibilidad de parámetros y "
                        "robustness score 0-100.",
     },
+    {
+        "icon": "📚",
+        "name": "Histórico",
+        "description": "Backtests guardados en SQLite, con informe de investigación "
+                       "exportable a Markdown.",
+    },
+    {
+        "icon": "📊",
+        "name": "Comparar",
+        "description": "Compara varias corridas guardadas del histórico lado a lado, "
+                       "con el mejor/peor por métrica resaltado.",
+    },
+    {
+        "icon": "📉",
+        "name": "Regímenes",
+        "description": "Detección de regímenes de volatilidad con un modelo oculto de "
+                       "Markov (HMM).",
+    },
+    {
+        "icon": "🎛️",
+        "name": "Kalman",
+        "description": "Hedge ratio dinámico con filtro de Kalman, para pairs trading "
+                       "con beta cambiante en el tiempo.",
+    },
+    {
+        "icon": "🔔",
+        "name": "Alertas",
+        "description": "Notificaciones multicanal (consola, archivo, email, Telegram, "
+                       "Slack) cuando una métrica cruza un umbral.",
+    },
+    {
+        "icon": "💼",
+        "name": "Portfolio",
+        "description": "Pesos de cartera óptimos: Hierarchical Risk Parity, Markowitz "
+                       "y Equal Risk Contribution.",
+    },
+    {
+        "icon": "🧭",
+        "name": "Estrategias",
+        "description": "Explora las señales de 6 estrategias -- Trend Following, "
+                       "Volatility Targeting, PCA StatArb, Risk Parity, "
+                       "Cross-Sectional Momentum y Carry Trade.",
+    },
+    {
+        "icon": "📟",
+        "name": "Papertrading",
+        "description": "Envía órdenes en papel (sin capital real) contra la cuenta "
+                       "de simulación de Alpaca.",
+    },
 ]

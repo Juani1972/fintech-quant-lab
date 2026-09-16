@@ -131,3 +131,45 @@ def test_ticker_search_does_not_crash_page():
     search_box = at.sidebar.text_input(key="_ticker_search_query")
     search_box.set_value("Apple").run()
     assert not at.exception
+
+
+def test_portfolio_page_loads_and_runs_without_exception():
+    """Página de Portfolio (HRP/Markowitz/Risk Parity): debe cargar sin
+    excepción, mostrar el aviso inicial, y gestionar con gracia el
+    fallo de red al pulsar 'Calcular cartera' (no hay red real a los
+    tickers de prueba en el entorno de test).
+    """
+    at = AppTest.from_file(str(APP_DIR / "pages" / "14_💼_Portfolio.py"), default_timeout=30)
+    at.session_state["global_tickers"] = "AAA, BBB, CCC"
+    at.run()
+    assert not at.exception
+
+    buttons = [b for b in at.sidebar.button if "Calcular cartera" in (b.label or "")]
+    assert len(buttons) == 1
+    buttons[0].click().run()
+    assert not at.exception
+
+
+def test_estrategias_page_loads_and_switches_strategy():
+    """Página de Estrategias: debe cargar sin excepción y permitir
+    cambiar entre las 6 estrategias del registro sin romperse."""
+    at = AppTest.from_file(str(APP_DIR / "pages" / "15_🧭_Estrategias.py"), default_timeout=30)
+    at.session_state["global_tickers"] = "AAA, BBB, CCC"
+    at.run()
+    assert not at.exception
+
+    select = at.sidebar.selectbox(key=None)
+    for name in [
+        "pca_statarb", "risk_parity", "cross_sectional_momentum",
+        "carry_trade", "volatility_targeting", "trend_following",
+    ]:
+        select.select(name).run()
+        assert not at.exception, f"Excepción al seleccionar '{name}': {at.exception}"
+
+
+def test_papertrading_page_without_credentials():
+    """Página de Papertrading sin credenciales de Alpaca configuradas:
+    debe mostrar la guía de configuración, no una excepción."""
+    at = AppTest.from_file(str(APP_DIR / "pages" / "16_📟_Papertrading.py"), default_timeout=30)
+    at.run()
+    assert not at.exception
