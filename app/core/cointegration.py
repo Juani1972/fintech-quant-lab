@@ -75,6 +75,14 @@ def engle_granger(
             observaciones para estimar alpha/beta.
     """
     df = pd.concat([y, x], axis=1).dropna()
+    if len(df) < 20:
+        raise ValueError(
+            f"Solo hay {len(df)} observaciones con datos válidos y solapados "
+            "entre ambos tickers en el rango de fechas elegido; se necesitan "
+            "al menos 20 para el test de cointegración. Puede deberse a que "
+            "uno de los tickers no tiene histórico en parte del rango "
+            "seleccionado, o a un fallo temporal al descargar sus datos."
+        )
     y_, x_ = df.iloc[:, 0], df.iloc[:, 1]
 
     if fit_until is not None:
