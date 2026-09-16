@@ -53,7 +53,19 @@ def kalman_hedge_ratio(
         y: Serie dependiente (precio).
         x: Serie independiente (precio).
         delta: Parámetro de transición (Q = delta / (1 - delta) * I).
-            Valores más altos = beta más reactivo.
+            Valores más altos permiten que beta cambie más rápido entre
+            observaciones, en teoría. En la práctica, con `y`/`x` en
+            niveles de precio (no log-precios) y magnitudes grandes
+            (p. ej. ~100+), el término x_t² en la ganancia de Kalman
+            hace que el efecto de `delta` se sature a partir de cierto
+            umbral -- y puede incluso invertirse para valores muy
+            pequeños. La relación "mayor delta = beta más reactivo" NO
+            es monótona de forma fiable en ese régimen. Si necesitas
+            que `delta` se comporte de forma predecible, considera
+            pasar log-precios (`np.log(precios)`) en vez de precios en
+            niveles, que es la práctica estándar en la literatura de
+            pairs trading precisamente para evitar esta dependencia de
+            escala.
         r_var: Varianza del ruido de observación (R).
         initial_beta: Beta inicial. Si None, se usa OLS.
         initial_alpha: Alpha inicial. Si None, se usa OLS.

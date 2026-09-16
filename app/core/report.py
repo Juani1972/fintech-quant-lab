@@ -20,7 +20,6 @@ from typing import Any
 import pandas as pd
 import plotly.graph_objects as go
 
-
 # ============================================================
 #  CSS embebido
 # ============================================================
@@ -153,12 +152,12 @@ def _fig_to_div(fig: go.Figure, include_plotlyjs: bool = False) -> str:
     Returns:
         HTML string listo para insertar.
     """
-    return fig.to_html(
+    return str(fig.to_html(
         full_html=False,
         include_plotlyjs="cdn" if include_plotlyjs else False,
         config={"displayModeBar": False, "responsive": True},
         div_id=None,
-    )
+    ))
 
 
 _PCT_KEYS = {
@@ -473,8 +472,8 @@ def build_walkforward_report(
             "max_drawdown", "win_rate"]
     rows = []
     for k in keys:
-        is_val = is_metrics.get(k, None)
-        oos_val = oos_metrics.get(k, None)
+        is_val = is_metrics.get(k)
+        oos_val = oos_metrics.get(k)
         is_str = _format_metric(k, is_val) if is_val is not None else "—"
         oos_str = _format_metric(k, oos_val) if oos_val is not None else "—"
         rows.append(f"<tr><td>{escape(k)}</td><td>{is_str}</td><td>{oos_str}</td></tr>")

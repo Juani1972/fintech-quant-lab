@@ -28,11 +28,12 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 import pandas as pd
 
@@ -99,7 +100,7 @@ class HistoryEntry:
     notes: str | None
 
     @classmethod
-    def from_row(cls, row: sqlite3.Row) -> "HistoryEntry":
+    def from_row(cls, row: sqlite3.Row) -> HistoryEntry:
         """Construye una entrada desde una fila de SQLite."""
         return cls(
             id=row["id"],
@@ -195,6 +196,7 @@ def save_run(
                 notes,
             ),
         )
+        assert cur.lastrowid is not None, "lastrowid tras un INSERT exitoso nunca es None"
         return int(cur.lastrowid)
 
 
@@ -280,6 +282,7 @@ def compare_runs(
     # --- Tabla de métricas ---
     metrics_data: dict[int, dict[str, Any]] = {}
     for e in entries:
+        assert e.id is not None, "entries viene de get_run(), siempre tiene id"
         metrics_data[e.id] = e.metrics or {}
     metrics_table = pd.DataFrame(metrics_data)
     metrics_table.index.name = "metric"
@@ -287,6 +290,7 @@ def compare_runs(
     # --- Tabla de parámetros ---
     params_data: dict[int, dict[str, Any]] = {}
     for e in entries:
+        assert e.id is not None, "entries viene de get_run(), siempre tiene id"
         params_data[e.id] = e.params or {}
     params_table = pd.DataFrame(params_data)
     params_table.index.name = "param"

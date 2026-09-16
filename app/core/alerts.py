@@ -29,17 +29,21 @@ Uso:
 from __future__ import annotations
 
 import json
+import logging
 import os
 import smtplib
 import ssl
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Literal
+from typing import Any, Literal, cast, get_args
 from urllib import request as urlrequest
+
+logger = logging.getLogger(__name__)
 
 
 # ============================================================
@@ -212,7 +216,7 @@ class AlertDispatcher:
     #  Construcción desde entorno
     # --------------------------------------------------------
     @classmethod
-    def from_env(cls, source: dict[str, Any] | None = None) -> "AlertDispatcher":
+    def from_env(cls, source: dict[str, Any] | None = None) -> AlertDispatcher:
         """Construye un dispatcher leyendo config de variables de entorno.
 
         Args:
@@ -231,7 +235,17 @@ class AlertDispatcher:
             return val.lower() in ("1", "true", "yes", "on")
 
         channels_raw = get("FQL_ALERT_CHANNELS", "console") or "console"
-        channels = [c.strip() for c in channels_raw.split(",") if c.strip()]
+        raw_list = [c.strip() for c in channels_raw.split(",") if c.strip()]
+        valid_names = set(get_args(ChannelName))
+        channels: list[ChannelName] = [
+            cast(ChannelName, c) for c in raw_list if c in valid_names
+        ]
+        invalid = [c for c in raw_list if c not in valid_names]
+        if invalid:
+            logger.warning(
+                "Canales de alerta desconocidos ignorados: %s (válidos: %s)",
+                invalid, sorted(valid_names),
+            )
 
         email_config: EmailConfig | None = None
         if "email" in channels:
@@ -249,17 +263,15 @@ class AlertDispatcher:
                 )
 
         telegram_config: TelegramConfig | None = None
-        if "telegram" in channels:
-            if get("FQL_TELEGRAM_TOKEN") and get("FQL_TELEGRAM_CHAT_ID"):
-                telegram_config = TelegramConfig(
-                    bot_token=get("FQL_TELEGRAM_TOKEN", "") or "",
-                    chat_id=get("FQL_TELEGRAM_CHAT_ID", "") or "",
-                )
+        if "telegram" in channels and get("FQL_TELEGRAM_TOKEN") and get("FQL_TELEGRAM_CHAT_ID"):
+            telegram_config = TelegramConfig(
+                bot_token=get("FQL_TELEGRAM_TOKEN", "") or "",
+                chat_id=get("FQL_TELEGRAM_CHAT_ID", "") or "",
+            )
 
         slack_config: SlackConfig | None = None
-        if "slack" in channels:
-            if get("FQL_SLACK_WEBHOOK"):
-                slack_config = SlackConfig(webhook_url=get("FQL_SLACK_WEBHOOK", "") or "")
+        if "slack" in channels and get("FQL_SLACK_WEBHOOK"):
+            slack_config = SlackConfig(webhook_url=get("FQL_SLACK_WEBHOOK", "") or "")
 
         file_config = FileConfig(
             path=Path(get("FQL_ALERT_LOG", "data/alerts.log") or "data/alerts.log")
@@ -389,7 +401,7 @@ class AlertDispatcher:
             method="POST",
         )
         with urlrequest.urlopen(req, timeout=10) as resp:
-            return 200 <= resp.status < 300
+            return bool(200 <= resp.status < 300)
 
     def _send_slack(self, alert: Alert) -> bool:
         cfg = self.slack_config
@@ -429,7 +441,7 @@ class AlertDispatcher:
             method="POST",
         )
         with urlrequest.urlopen(req, timeout=10) as resp:
-            return 200 <= resp.status < 300
+            return bool(200 <= resp.status < 300)
 
 
 # ============================================================
