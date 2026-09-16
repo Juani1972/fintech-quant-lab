@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from app.core.backtest import BacktestMode
 from app.core.cointegration import engle_granger
 from app.core.data_loader import load_prices
 from app.core.optimization import grid_search_walkforward, heatmap_data
@@ -104,12 +105,14 @@ if run:
                 exit_=0.5,
             )
         param_grid: dict[str, list] = {"window": windows, "entry": entries}
+        opt_mode: BacktestMode = "absolute"
     elif strategy == "Momentum":
         series = prices[t1]
 
         def factory(params):
             return signal_from_momentum(window=params["window"])
         param_grid = {"window": windows}
+        opt_mode = "percent"
     else:
         assert entries is not None, "entries solo es None cuando strategy == 'Momentum'"
         series = prices[t1]
@@ -121,6 +124,7 @@ if run:
                 exit_=0.5,
             )
         param_grid = {"window": windows, "entry": entries}
+        opt_mode = "percent"
 
     if not param_grid or any(len(v) == 0 for v in param_grid.values()):
         callout("Configura al menos un valor en cada parámetro del grid.",
@@ -136,6 +140,7 @@ if run:
                 objective=objective,
                 train_size=train_size,
                 test_size=test_size,
+                mode=opt_mode,
             )
         except ValueError as e:
             callout(f"Error en la optimización: {e}", variant="danger")
