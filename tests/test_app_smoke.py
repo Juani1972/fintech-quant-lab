@@ -116,3 +116,18 @@ def test_optimizacion_page_loads_without_default_value_error():
     )
     at.run()
     assert not at.exception
+
+
+def test_ticker_search_does_not_crash_page():
+    """El buscador de empresas por nombre (portada) no debe romper la
+    app aunque la búsqueda falle (p. ej. sin red, o Yahoo Finance caído)
+    -- search_ticker envuelve los fallos como ConnectionError y la
+    página debe mostrar un aviso en vez de una excepción sin capturar.
+    """
+    at = AppTest.from_file(str(APP_DIR / "main.py"), default_timeout=30)
+    at.run()
+    assert not at.exception
+
+    search_box = at.sidebar.text_input(key="_ticker_search_query")
+    search_box.set_value("Apple").run()
+    assert not at.exception
