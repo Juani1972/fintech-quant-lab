@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from app.core.data_loader import compute_log_returns, load_prices
+from app.core.data_loader import compute_log_returns, load_prices, search_ticker
 
 
 def test_log_returns_basic():
@@ -123,3 +123,46 @@ def test_load_prices_raise_policy_with_nans():
         load_prices(
             ["JJJ", "KKK"], date(2023, 9, 1), date(2023, 9, 30), missing_policy="raise",
         )
+
+
+def test_search_ticker_returns_parsed_results():
+    """search_ticker debe extraer symbol/name/exchange/type de los
+    resultados de yf.Search, tal como los devuelve realmente (según
+    el código fuente de yfinance: una lista de dicts con al menos
+    'symbol', y opcionalmente 'shortname'/'longname'/'exchange'/
+    'quoteType').
+    """
+    from unittest.mock import MagicMock, patch
+
+    fake_quotes = [
+        {"symbol": "AAPL", "shortname": "Apple Inc.", "exchange": "NMS", "quoteType": "EQUITY"},
+        {"symbol": "APC.DE", "longname": "Apple Inc. (Alemania)", "exchange": "GER", "quoteType": "EQUITY"},
+        {"exchange": "OPR", "quoteType": "OPTION"},  # sin "symbol" -> se descarta
+    ]
+    mock_search = MagicMock()
+    mock_search.quotes = fake_quotes
+
+    with patch("app.core.data_loader.yf.Search", return_value=mock_search) as m:
+        results = search_ticker("Apple 001")  # query única para no chocar con caché
+
+    m.assert_called_once()
+    assert len(results) == 2  # el que no tiene "symbol" se descarta
+    assert results[0] == {
+        "symbol": "AAPL", "name": "Apple Inc.", "exchange": "NMS", "type": "EQUITY",
+    }
+    assert results[1]["name"] == "Apple Inc. (Alemania)"  # usa longname si no hay shortname
+
+
+def test_search_ticker_rejects_short_query():
+    with pytest.raises(ValueError, match="al menos 2 caracteres"):
+        search_ticker("a")
+
+
+def test_search_ticker_wraps_connection_errors():
+    from unittest.mock import patch
+
+    with (
+        patch("app.core.data_loader.yf.Search", side_effect=RuntimeError("timeout")),
+        pytest.raises(ConnectionError, match="No se pudo buscar"),
+    ):
+        search_ticker("Microsoft 003")  # query única para no chocar con caché
