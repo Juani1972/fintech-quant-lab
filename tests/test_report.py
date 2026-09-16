@@ -1,6 +1,7 @@
 """Tests para el módulo de generación de informes HTML."""
 import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
 import pytest
 
 from app.core.report import (
@@ -13,7 +14,6 @@ from app.core.report import (
     build_backtest_report,
     build_walkforward_report,
 )
-import plotly.graph_objects as go
 
 
 @pytest.fixture
