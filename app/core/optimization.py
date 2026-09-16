@@ -9,7 +9,7 @@ from itertools import product
 import numpy as np
 import pandas as pd
 
-from app.core.backtest import run_backtest
+from app.core.backtest import BacktestMode, run_backtest
 from app.core.walkforward import SignalGenerator, walk_forward_analysis
 
 logger = logging.getLogger(__name__)
@@ -48,6 +48,7 @@ def grid_search(
     initial_capital: float = 100_000.0,
     commission: float = 0.001,
     slippage: float = 0.0005,
+    mode: BacktestMode = "percent",
 ) -> OptimizationResult:
     """Ejecuta un grid search sobre `param_grid`.
 
@@ -58,6 +59,8 @@ def grid_search(
         objective: Métrica a optimizar.
         minimize: Si True, minimiza el objetivo.
         initial_capital, commission, slippage: Parámetros del backtest.
+        mode: 'percent' para precios, 'absolute' para spreads que
+            cruzan cero (p. ej. pairs trading).
 
     Returns:
         OptimizationResult con el grid completo y la mejor combinación.
@@ -81,6 +84,7 @@ def grid_search(
                 prices, signals,
                 initial_capital=initial_capital,
                 commission=commission, slippage=slippage,
+                mode=mode,
             )
             row = {**params, **result.metrics}
             rows.append(row)
@@ -249,8 +253,15 @@ def grid_search_walkforward(
     initial_capital: float = 100_000.0,
     commission: float = 0.001,
     slippage: float = 0.0005,
+    mode: BacktestMode = "percent",
 ) -> WalkForwardOptimizationResult:
-    """Grid search evaluado con walk-forward (OOS)."""
+    """Grid search evaluado con walk-forward (OOS).
+
+    Args:
+        mode: 'percent' para precios, 'absolute' para spreads que
+            cruzan cero (p. ej. pairs trading). Se reenvía a cada
+            `walk_forward_analysis()` del grid.
+    """
     if not param_grid or not any(param_grid.values()):
         raise ValueError("El grid de parámetros está vacío.")
 
@@ -271,6 +282,7 @@ def grid_search_walkforward(
                 initial_capital=initial_capital,
                 commission=commission,
                 slippage=slippage,
+                mode=mode,
             )
             row = {
                 **params,
