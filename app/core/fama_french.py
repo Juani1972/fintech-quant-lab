@@ -86,7 +86,16 @@ def load_factors(
         raise ValueError(f"Sin datos de factores entre {start} y {end}.")
 
     ff = raw / 100
-    ff.index = pd.to_datetime(ff.index)
+    # El dataset mensual de la librería de Kenneth French devuelve un
+    # índice PeriodIndex; pandas >= 2.x ya no permite convertirlo con
+    # pd.to_datetime() directamente (TypeError: "Passing PeriodDtype
+    # data is invalid. Use `data.to_timestamp()` instead") -- hay que
+    # detectarlo y usar to_timestamp(). El dataset diario ya trae un
+    # índice convertible directamente con pd.to_datetime().
+    if isinstance(ff.index, pd.PeriodIndex):
+        ff.index = ff.index.to_timestamp()
+    else:
+        ff.index = pd.to_datetime(ff.index)
     return ff
 
 

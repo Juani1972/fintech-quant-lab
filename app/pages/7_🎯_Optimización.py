@@ -58,7 +58,7 @@ with st.sidebar:
     if strategy == "Momentum":
         windows = st.multiselect(
             "Ventanas a probar", [10, 20, 30, 45, 60, 90, 120],
-            default=[20, 40, 60],
+            default=[20, 45, 60],
         )
         entries = None
     else:

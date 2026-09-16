@@ -101,3 +101,18 @@ def test_history_page_renders_report_for_saved_run():
         assert "45" in values  # Nº operaciones
     finally:
         history.clear_all()
+
+
+def test_optimizacion_page_loads_without_default_value_error():
+    """Regresión: la página de Optimización tenía un
+    st.multiselect(..., default=[20, 40, 60]) donde 40 no estaba en
+    la lista de opciones [10, 20, 30, 45, 60, 90, 120] -- Streamlit
+    lanza StreamlitDefaultNotInOptionsError inmediatamente al cargar
+    la página (antes de cualquier interacción del usuario), así que
+    un simple `at.run()` sin más ya lo detecta.
+    """
+    at = AppTest.from_file(
+        str(APP_DIR / "pages" / "7_🎯_Optimización.py"), default_timeout=30,
+    )
+    at.run()
+    assert not at.exception
