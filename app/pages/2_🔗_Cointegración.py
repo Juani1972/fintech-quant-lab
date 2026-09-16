@@ -105,7 +105,11 @@ if run:
 
     # --- Detalle del par seleccionado ---
     section(f"📌 Detalle del par {t1} / {t2}")
-    result = engle_granger(prices[t1], prices[t2])
+    try:
+        result = engle_granger(prices[t1], prices[t2])
+    except ValueError as e:
+        callout(f"No se pudo analizar este par: {e}", variant="danger")
+        st.stop()
 
     callout(
         "⚠️ Alpha y beta se estiman con toda la muestra mostrada (incluido "
