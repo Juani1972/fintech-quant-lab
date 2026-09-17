@@ -379,6 +379,19 @@ def data_preview(prices: pd.DataFrame) -> None:
     with st.expander("👁️ Vista previa de los datos cargados", expanded=False):
         report = data_quality_report(prices)
 
+        st.download_button(
+            "⬇️ Descargar estos precios (CSV)",
+            prices.to_csv().encode("utf-8"),
+            file_name="precios.csv",
+            mime="text/csv",
+            help=(
+                "Los datos de precios tal cual los ha descargado la app, "
+                "antes de cualquier cálculo -- para cruzarlos con otra "
+                "fuente o recalcular algo por tu cuenta y comprobar que "
+                "los resultados coinciden."
+            ),
+        )
+
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Filas", cast(int, report["rows"]))
         c2.metric("Columnas", cast(int, report["columns"]))
