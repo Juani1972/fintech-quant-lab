@@ -9,7 +9,12 @@ from app.core.garch import (
     residual_diagnostics,
 )
 from app.core.plotting import line_chart
-from app.state import ensure_session_initialized, get_global_params
+from app.state import (
+    ensure_session_initialized,
+    get_global_params,
+    get_global_provider,
+    get_global_provider_kwargs,
+)
 from app.styles import callout, footer, hero, page_setup, section
 
 page_setup("GARCH", "📈")
@@ -25,6 +30,8 @@ hero(
 
 ensure_session_initialized()
 tickers, start, end = get_global_params()
+provider = get_global_provider()
+provider_kwargs = get_global_provider_kwargs()
 
 if not tickers:
     callout("Introduce al menos un ticker en la barra lateral.", variant="warning")
@@ -44,7 +51,7 @@ with st.sidebar:
 if run:
     with st.spinner("Descargando datos..."):
         try:
-            prices = load_prices(tickers, start, end)
+            prices = load_prices(tickers, start, end, provider=provider, provider_kwargs=provider_kwargs)
         except (ValueError, ConnectionError) as e:
             callout(f"Error al cargar datos: {e}", variant="danger")
             st.stop()

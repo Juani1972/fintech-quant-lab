@@ -22,18 +22,31 @@ def load_prices(
     end: date,
     field: str = "Adj Close",
     missing_policy: MissingPolicy = "ffill",
+    provider: str = "yahoo",
+    provider_kwargs: dict | None = None,
 ) -> pd.DataFrame:
-    """Descarga precios ajustados de yfinance.
+    """Descarga precios ajustados, de yfinance u otra fuente alternativa.
 
     Args:
         tickers: Lista de tickers.
         start: Fecha de inicio.
         end: Fecha de fin.
-        field: Columna a extraer ('Adj Close' o 'Close').
+        field: Columna a extraer ('Adj Close' o 'Close'). Solo aplica
+            con provider='yahoo'; el resto de proveedores (ver
+            `app.core.providers`) siempre devuelven un único precio de
+            cierre por ticker.
         missing_policy: Cómo tratar los NaN tras alinear:
             - 'ffill': rellena hacia delante.
             - 'drop':  elimina cualquier fila con NaN.
             - 'raise': lanza ValueError si hay NaN.
+        provider: 'yahoo' (por defecto, sin cambios de comportamiento
+            respecto a versiones anteriores de esta función) u otro de
+            los registrados en `app.core.providers.get_provider`
+            ('stooq', 'csv', 'alphavantage').
+        provider_kwargs: kwargs adicionales para el constructor del
+            proveedor elegido cuando `provider != 'yahoo'` (p.ej.
+            `{"api_key": "..."}` para alphavantage, `{"directory":
+            "..."}` para csv). Ignorado con provider='yahoo'.
 
     Returns:
         DataFrame con precios, indexado por fecha.
@@ -41,7 +54,7 @@ def load_prices(
     Raises:
         ValueError: Si no hay tickers, fechas inválidas, no hay datos, o
             hay NaN y `missing_policy='raise'`.
-        ConnectionError: Si yfinance falla.
+        ConnectionError: Si la descarga falla (yfinance u otro proveedor).
     """
     tickers = [t.strip().upper() for t in tickers if t.strip()]
     if not tickers:
@@ -58,27 +71,45 @@ def load_prices(
             "Opciones: 'ffill', 'drop', 'raise'."
         )
 
-    try:
-        raw = yf.download(
-            tickers, start=start, end=end, progress=False, auto_adjust=False
-        )
-    except Exception as e:
-        raise ConnectionError(f"Error descargando datos de yfinance: {e}") from e
+    if provider == "yahoo":
+        try:
+            raw = yf.download(
+                tickers, start=start, end=end, progress=False, auto_adjust=False
+            )
+        except Exception as e:
+            raise ConnectionError(f"Error descargando datos de yfinance: {e}") from e
 
-    if raw is None or raw.empty:
-        raise ValueError(
-            f"No se obtuvieron datos para {tickers} entre {start} y {end}. "
-            "Revisa los tickers y el rango de fechas."
-        )
+        if raw is None or raw.empty:
+            raise ValueError(
+                f"No se obtuvieron datos para {tickers} entre {start} y {end}. "
+                "Revisa los tickers y el rango de fechas."
+            )
 
-    if isinstance(raw.columns, pd.MultiIndex):
-        if field not in raw.columns.get_level_values(0):
-            raise ValueError(f"Campo '{field}' no disponible en los datos.")
-        data = raw[field]
+        if isinstance(raw.columns, pd.MultiIndex):
+            if field not in raw.columns.get_level_values(0):
+                raise ValueError(f"Campo '{field}' no disponible en los datos.")
+            data = raw[field]
+        else:
+            if field not in raw.columns:
+                raise ValueError(f"Campo '{field}' no disponible en los datos.")
+            data = raw[[field]].rename(columns={field: tickers[0]})
     else:
-        if field not in raw.columns:
-            raise ValueError(f"Campo '{field}' no disponible en los datos.")
-        data = raw[[field]].rename(columns={field: tickers[0]})
+        # El resto de proveedores (ver app.core.providers) ya devuelven
+        # un DataFrame limpio de precios de cierre, una columna por
+        # ticker -- no hay selección de "field" ni MultiIndex que tratar.
+        from app.core.providers import ProviderError, get_provider
+
+        try:
+            prov = get_provider(provider, **(provider_kwargs or {}))
+            data = prov.fetch(tickers, start, end)
+        except ProviderError as e:
+            raise ConnectionError(f"Error descargando datos de {provider}: {e}") from e
+
+        if data is None or data.empty:
+            raise ValueError(
+                f"No se obtuvieron datos para {tickers} entre {start} y {end} "
+                f"con el proveedor '{provider}'."
+            )
 
     n_missing_before = int(data.isna().sum().sum())
     data = data.dropna(how="all")

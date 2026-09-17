@@ -15,7 +15,12 @@ from app.core.portfolio import (
     risk_parity_weights,
 )
 from app.core.risk import calmar_ratio, drawdown_series, max_drawdown, sharpe_ratio, sortino_ratio
-from app.state import ensure_session_initialized, get_global_params
+from app.state import (
+    ensure_session_initialized,
+    get_global_params,
+    get_global_provider,
+    get_global_provider_kwargs,
+)
 from app.styles import callout, footer, hero, kpi_row, page_setup, section
 
 page_setup("Portfolio", "💼")
@@ -33,6 +38,8 @@ hero(
 init_db()
 ensure_session_initialized()
 tickers, start, end = get_global_params()
+provider = get_global_provider()
+provider_kwargs = get_global_provider_kwargs()
 
 if len(tickers) < 2:
     callout(
@@ -98,7 +105,7 @@ if not run_clicked:
     st.stop()
 
 try:
-    prices = load_prices(tickers, start, end)
+    prices = load_prices(tickers, start, end, provider=provider, provider_kwargs=provider_kwargs)
 except (ValueError, ConnectionError) as e:
     callout(f"Error al cargar datos: {e}", variant="danger")
     st.stop()

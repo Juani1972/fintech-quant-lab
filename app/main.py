@@ -100,6 +100,35 @@ with st.sidebar:
                     "docs/MERCADOS.md para buscar manualmente."
                 )
 
+    # --- Fuente de datos ---
+    PROVIDER_LABELS = {
+        "yahoo": "Yahoo Finance (por defecto)",
+        "stooq": "Stooq",
+        "alphavantage": "Alpha Vantage",
+    }
+    with st.expander("🌐 Fuente de datos"):
+        st.caption(
+            "Solo cambia esto si Yahoo Finance te está fallando o quieres "
+            "comparar con otra fuente -- Stooq no necesita clave; Alpha "
+            "Vantage necesita una API key gratuita propia."
+        )
+        provider_choice = st.selectbox(
+            "Proveedor", list(PROVIDER_LABELS.keys()),
+            format_func=lambda p: PROVIDER_LABELS[p],
+            index=list(PROVIDER_LABELS.keys()).index(
+                st.session_state.get("global_provider", "yahoo")
+            ),
+            label_visibility="collapsed",
+        )
+        st.session_state["global_provider"] = provider_choice
+        if provider_choice == "alphavantage":
+            st.text_input(
+                "API key de Alpha Vantage", type="password",
+                key="global_provider_api_key",
+                help="Gratis en alphavantage.co/support/#api-key. Límite "
+                     "de la cuenta gratuita: 25 peticiones/día.",
+            )
+
     # --- Selector de universo ---
     st.selectbox(
         "Universo rápido",

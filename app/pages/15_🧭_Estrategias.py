@@ -6,7 +6,12 @@ import streamlit as st
 from app.config import THEME
 from app.core.data_loader import load_prices
 from app.core.strategies import StrategyError, get_strategy, list_strategies
-from app.state import ensure_session_initialized, get_global_params
+from app.state import (
+    ensure_session_initialized,
+    get_global_params,
+    get_global_provider,
+    get_global_provider_kwargs,
+)
 from app.styles import callout, footer, hero, page_setup, section
 
 page_setup("Estrategias", "🧭")
@@ -33,6 +38,8 @@ callout(
 
 ensure_session_initialized()
 tickers, start, end = get_global_params()
+provider = get_global_provider()
+provider_kwargs = get_global_provider_kwargs()
 
 if not tickers:
     callout("Introduce al menos un ticker en la barra lateral.", variant="warning")
@@ -115,7 +122,7 @@ if not run_clicked:
     st.stop()
 
 try:
-    prices = load_prices(tickers, start, end)
+    prices = load_prices(tickers, start, end, provider=provider, provider_kwargs=provider_kwargs)
 except (ValueError, ConnectionError) as e:
     callout(f"Error al cargar datos: {e}", variant="danger")
     st.stop()

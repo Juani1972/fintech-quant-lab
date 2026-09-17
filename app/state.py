@@ -37,6 +37,32 @@ def get_global_params() -> tuple[list[str], date, date]:
     return tickers, start, end
 
 
+def get_global_provider() -> str:
+    """Lee la fuente de datos elegida globalmente (por defecto 'yahoo').
+
+    Función separada de `get_global_params()` a propósito -- así no se
+    cambia la firma que ya usan las 16 páginas existentes (todas hacen
+    `tickers, start, end = get_global_params()`; añadir un cuarto valor
+    ahí habría roto esa desestructuración en todas ellas). Las páginas
+    que quieran respetar la fuente de datos elegida llaman a esta
+    función aparte y se la pasan a `load_prices(..., provider=...)`.
+    """
+    return str(st.session_state.get("global_provider", "yahoo"))
+
+
+def get_global_provider_kwargs() -> dict:
+    """kwargs adicionales para `load_prices(..., provider_kwargs=...)`
+    según el proveedor elegido (p.ej. la api_key de Alpha Vantage,
+    introducida en el desplegable de `main.py`). Vacío para proveedores
+    que no necesitan configuración extra (yahoo, stooq).
+    """
+    if get_global_provider() == "alphavantage":
+        api_key = st.session_state.get("global_provider_api_key", "")
+        if api_key:
+            return {"api_key": api_key}
+    return {}
+
+
 def ensure_session_initialized() -> None:
     """Inicializa las claves de sesión si no existen.
 
@@ -50,3 +76,5 @@ def ensure_session_initialized() -> None:
         st.session_state["global_start"] = DEFAULT_START
     if "global_end" not in st.session_state:
         st.session_state["global_end"] = DEFAULT_END
+    if "global_provider" not in st.session_state:
+        st.session_state["global_provider"] = "yahoo"

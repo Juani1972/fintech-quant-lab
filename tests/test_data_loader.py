@@ -1,6 +1,6 @@
 """Tests para data_loader."""
 from datetime import date
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
@@ -166,3 +166,49 @@ def test_search_ticker_wraps_connection_errors():
         pytest.raises(ConnectionError, match="No se pudo buscar"),
     ):
         search_ticker("Microsoft 003")  # query única para no chocar con caché
+
+
+def test_load_prices_with_alternate_provider():
+    """Regresión: load_prices(provider=...) debe delegar en
+    app.core.providers.get_provider en vez de yfinance cuando se pide
+    un proveedor distinto de 'yahoo', y aplicar la misma missing_policy
+    sobre el resultado."""
+    fake_df = pd.DataFrame(
+        {"AAA": [100.0, np.nan, 102.0], "BBB": [50.0, 50.5, 51.0]},
+        index=pd.bdate_range("2023-01-02", periods=3),
+    )
+    fake_provider = MagicMock()
+    fake_provider.fetch.return_value = fake_df
+
+    with patch("app.core.providers.get_provider", return_value=fake_provider) as m:
+        result = load_prices(
+            ["AAA", "BBB"], date(2023, 1, 1), date(2023, 1, 10),
+            provider="stooq", missing_policy="ffill",
+        )
+
+    m.assert_called_once_with("stooq")
+    assert list(result.columns) == ["AAA", "BBB"]
+    assert not result["AAA"].isna().any()  # ffill aplicado igual que con yahoo
+
+
+def test_load_prices_passes_provider_kwargs():
+    fake_provider = MagicMock()
+    fake_provider.fetch.return_value = pd.DataFrame(
+        {"AAA": [100.0]}, index=pd.bdate_range("2023-01-02", periods=1),
+    )
+    with patch("app.core.providers.get_provider", return_value=fake_provider) as m:
+        load_prices(
+            ["AAA"], date(2023, 1, 1), date(2023, 1, 10),
+            provider="alphavantage", provider_kwargs={"api_key": "clave-123"},
+        )
+    m.assert_called_once_with("alphavantage", api_key="clave-123")
+
+
+def test_load_prices_wraps_provider_errors_as_connection_error():
+    from app.core.providers import ProviderError
+
+    with (
+        patch("app.core.providers.get_provider", side_effect=ProviderError("sin datos")),
+        pytest.raises(ConnectionError, match="Error descargando datos de stooq"),
+    ):
+        load_prices(["AAA"], date(2023, 1, 1), date(2023, 1, 10), provider="stooq")

@@ -9,7 +9,12 @@ from app.core.kalman import (
     kalman_hedge_ratio,
     rolling_ols_hedge_ratio,
 )
-from app.state import ensure_session_initialized, get_global_params
+from app.state import (
+    ensure_session_initialized,
+    get_global_params,
+    get_global_provider,
+    get_global_provider_kwargs,
+)
 from app.styles import callout, footer, hero, page_setup, section
 
 page_setup("Kalman", "🎛️")
@@ -26,6 +31,8 @@ hero(
 
 ensure_session_initialized()
 tickers, start, end = get_global_params()
+provider = get_global_provider()
+provider_kwargs = get_global_provider_kwargs()
 
 if len(tickers) < 2:
     callout("Esta página requiere al menos 2 tickers.", variant="warning")
@@ -52,7 +59,7 @@ with st.sidebar:
 if run:
     with st.spinner("Descargando datos..."):
         try:
-            prices = load_prices([t1, t2], start, end)
+            prices = load_prices([t1, t2], start, end, provider=provider, provider_kwargs=provider_kwargs)
         except (ValueError, ConnectionError) as e:
             callout(f"Error al cargar datos: {e}", variant="danger")
             st.stop()
