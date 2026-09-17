@@ -3,10 +3,15 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from app.core.backtest import BacktestMode
+from app.core.backtest import BacktestMode, run_backtest
 from app.core.cointegration import engle_granger
 from app.core.data_loader import load_prices
-from app.core.optimization import grid_search_walkforward, heatmap_data
+from app.core.optimization import (
+    OptimizationResult,
+    deflated_sharpe_ratio,
+    grid_search_walkforward,
+    heatmap_data,
+)
 from app.core.walkforward import (
     signal_from_mean_reversion,
     signal_from_momentum,
@@ -163,6 +168,45 @@ if run:
             "IS": pd.Series(result.best_is_metrics),
         })
         st.dataframe(best_df.style.format("{:.4f}"), use_container_width=True)
+
+    if objective == "sharpe":
+        section("🎲 Deflated Sharpe Ratio")
+        callout(
+            "Cuantas más combinaciones se prueban en el grid, más probable "
+            "es que el Sharpe de la ganadora sea alto por puro azar de la "
+            "selección múltiple, no porque tenga una ventaja real. El DSR "
+            "corrige por esto: > 0.95 sugiere que el resultado probablemente "
+            "no es solo el máximo esperable por azar entre tantos intentos.",
+            variant="info",
+        )
+        try:
+            winning_generator = factory(result.best_params)
+            winning_signal = winning_generator(series, series)
+            winning_backtest = run_backtest(series, winning_signal, mode=opt_mode)
+            dsr_input = OptimizationResult(
+                grid=result.grid.rename(columns={f"oos_{objective}": objective}),
+                best_params=result.best_params,
+                best_metrics=result.best_oos_metrics,
+                objective=objective,
+                param_names=result.param_names,
+            )
+            dsr = deflated_sharpe_ratio(dsr_input, winning_backtest.returns)
+        except ValueError as e:
+            callout(f"No se pudo calcular el DSR: {e}", variant="warning")
+        else:
+            d1, d2, d3, d4 = st.columns(4)
+            d1.metric("Sharpe observado (anual)", f"{dsr['sr_observed']:.2f}")
+            d2.metric("Sharpe máx. esperado por azar", f"{dsr['sr_expected_max']:.2f}")
+            d3.metric("Nº combinaciones", f"{int(dsr['n_trials'])}")
+            d4.metric("DSR", f"{dsr['dsr']:.2%}")
+            if dsr["dsr"] < 0.95:
+                callout(
+                    f"DSR = {dsr['dsr']:.1%}, por debajo del umbral habitual "
+                    "de 95% -- el Sharpe ganador podría deberse en buena "
+                    "parte a haber probado muchas combinaciones, no a una "
+                    "ventaja real. Trátalo con cautela.",
+                    variant="warning",
+                )
 
     section("📋 Grid completo")
     display_cols = result.param_names + [

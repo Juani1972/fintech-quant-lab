@@ -4,9 +4,11 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from app.core.alerts import AlertDispatcher, check_backtest_rules
 from app.core.backtest import (
     BacktestMode,
     BacktestResult,
+    benchmark_metrics,
     buy_and_hold,
     run_backtest,
 )
@@ -311,6 +313,25 @@ if run:
         use_container_width=True,
     )
 
+    section("🆚 Comparación contra el benchmark")
+    callout(
+        "El gráfico de arriba dibuja las dos curvas juntas, pero eso no dice "
+        "si el exceso de retorno compensa el riesgo extra asumido -- estas "
+        "métricas sí. Beta > 1 significa más sensible al mercado que el "
+        "benchmark; alpha de Jensen positivo significa que bate lo que el "
+        "CAPM predeciría dado ese beta.",
+        variant="info",
+    )
+    try:
+        bm = benchmark_metrics(result.equity_curve, bh)
+        bc1, bc2, bc3, bc4 = st.columns(4)
+        bc1.metric("Beta", f"{bm['beta']:.2f}")
+        bc2.metric("Alpha de Jensen (anual)", f"{bm['jensen_alpha']:.2%}")
+        bc3.metric("Tracking error (anual)", f"{bm['tracking_error']:.2%}")
+        bc4.metric("Information Ratio", f"{bm['information_ratio']:.2f}")
+    except ValueError as e:
+        callout(f"No se pudieron calcular las métricas de benchmark: {e}", variant="warning")
+
     col_dd, col_pos = st.columns(2)
     with col_dd:
         st.plotly_chart(plot_drawdown(result.equity_curve), use_container_width=True)
@@ -328,6 +349,38 @@ if run:
     with col_p:
         st.markdown("**Parámetros usados**")
         st.json(result.params)
+
+    section("🔔 Alertas")
+    triggered_alerts = check_backtest_rules(result.metrics)
+    if triggered_alerts:
+        for alert in triggered_alerts:
+            callout(alert.format_text().replace("\n", "<br>"), variant=alert.severity.value)
+        with st.form("dispatch_backtest_alerts_form"):
+            st.caption(
+                "Evaluado contra las reglas por defecto de "
+                "`default_backtest_rules()` (Sharpe, Max Drawdown, nº de "
+                "operaciones, win rate). Para reglas propias o configurar "
+                "canales de envío, ve a la página 🔔 Alertas."
+            )
+            send_alerts = st.form_submit_button("📤 Enviar estas alertas por los canales configurados")
+        if send_alerts:
+            dispatcher = AlertDispatcher.from_env()
+            n_sent = 0
+            for alert in triggered_alerts:
+                results = dispatcher.dispatch(alert)
+                n_sent += sum(1 for ok in results.values() if ok)
+            if n_sent:
+                st.success(f"{n_sent} envío(s) realizado(s) (consola/archivo siempre disponibles).")
+            else:
+                st.info(
+                    "No hay canales configurados más allá de consola/archivo "
+                    "-- configúralos en 🔔 Alertas para email/Telegram/Slack."
+                )
+    else:
+        callout(
+            "Ninguna regla por defecto se ha disparado con estas métricas.",
+            variant="success",
+        )
 
     section("📋 Operaciones")
     if len(result.trades) > 0:

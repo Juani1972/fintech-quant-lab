@@ -1,4 +1,5 @@
 """Página de construcción de carteras (Markowitz, Risk Parity, HRP)."""
+import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -10,6 +11,7 @@ from app.core.portfolio import (
     PortfolioError,
     hrp_weights,
     markowitz_weights,
+    rebalance_schedule,
     risk_parity_weights,
 )
 from app.core.risk import calmar_ratio, drawdown_series, max_drawdown, sharpe_ratio, sortino_ratio
@@ -65,6 +67,27 @@ with st.sidebar:
     initial_capital = st.number_input(
         "Capital inicial (€)", min_value=1000.0, value=100_000.0, step=1000.0,
     )
+
+    st.markdown("**Rebalanceo**")
+    rebalance_mode = st.selectbox(
+        "Modo",
+        ["Sin rebalanceo (buy & hold)", "Calendario", "Por desviación"],
+        help=(
+            "Sin rebalanceo: los pesos calculados se dejan derivar libremente "
+            "según el rendimiento de cada activo. Calendario: se vuelve al "
+            "peso objetivo cada N periodos. Por desviación: se rebalancea "
+            "solo cuando algún peso se aleja demasiado del objetivo."
+        ),
+    )
+    rebalance_freq = None
+    rebalance_threshold = None
+    if rebalance_mode == "Calendario":
+        rebalance_freq = st.selectbox("Frecuencia", ["M", "Q", "W"], format_func=lambda f: {
+            "M": "Mensual", "Q": "Trimestral", "W": "Semanal",
+        }[f])
+    elif rebalance_mode == "Por desviación":
+        rebalance_threshold = st.slider("Desviación máxima tolerada", 0.01, 0.30, 0.05, 0.01)
+
     run_clicked = st.button("🚀 Calcular cartera", type="primary")
 
 if not run_clicked:
@@ -128,18 +151,71 @@ with col_table:
     )
     st.caption(f"Suma de pesos: {weights.sum():.4f}")
 
-# --- Backtest de la cartera (pesos estáticos, sin rebalanceo) ---
+# --- Backtest de la cartera, con o sin rebalanceo ---
 section("📈 Evolución de la cartera")
-callout(
-    "Los pesos se calculan una vez con todo el histórico y se mantienen "
-    "fijos (buy & hold ponderado) -- no hay rebalanceo periódico en esta "
-    "vista. Es una simplificación deliberada para ver el efecto puro de "
-    "la asignación de pesos; en producción normalmente se rebalancearía "
-    "periódicamente.",
-    variant="info",
-)
 
-portfolio_returns = (returns * weights).sum(axis=1)
+
+def _simulate_drifting_weights(returns: pd.DataFrame, target: pd.Series) -> pd.DataFrame:
+    """Pesos día a día dejando que deriven libremente (sin rebalancear
+    nunca), partiendo de `target`. Sirve como insumo para detectar
+    fechas de rebalanceo por desviación con `rebalance_schedule`."""
+    w = target.copy()
+    rows = []
+    for date in returns.index:
+        rows.append(w.copy())
+        grown = w * (1 + returns.loc[date])
+        total = grown.sum()
+        w = grown / total if total != 0 else w
+    return pd.DataFrame(rows, index=returns.index)
+
+
+def _simulate_rebalanced_portfolio(
+    returns: pd.DataFrame, target: pd.Series, rebalance_dates: pd.Index,
+) -> pd.Series:
+    """Retorno diario de la cartera, reseteando a `target` en
+    `rebalance_dates` y dejando derivar los pesos el resto de días."""
+    w = target.copy()
+    daily_returns = []
+    for date in returns.index:
+        if date in rebalance_dates:
+            w = target.copy()
+        day_ret = float((w * returns.loc[date]).sum())
+        daily_returns.append(day_ret)
+        grown = w * (1 + returns.loc[date])
+        total = grown.sum()
+        w = grown / total if total != 0 else w
+    return pd.Series(daily_returns, index=returns.index)
+
+
+n_rebalances = None
+if rebalance_mode == "Sin rebalanceo (buy & hold)":
+    callout(
+        "Los pesos se calculan una vez con todo el histórico y se dejan "
+        "derivar libremente según el rendimiento de cada activo -- sin "
+        "volver nunca al peso objetivo.",
+        variant="info",
+    )
+    portfolio_returns = (returns * weights).sum(axis=1)
+else:
+    if rebalance_mode == "Calendario":
+        assert rebalance_freq is not None
+        drifting = _simulate_drifting_weights(returns, weights)
+        schedule = rebalance_schedule(drifting, method="calendar", frequency=rebalance_freq)
+    else:
+        assert rebalance_threshold is not None
+        drifting = _simulate_drifting_weights(returns, weights)
+        schedule = rebalance_schedule(
+            drifting, method="threshold", threshold=rebalance_threshold,
+        )
+    rebalance_dates = schedule.index[schedule["rebalance"]]
+    n_rebalances = len(rebalance_dates)
+    portfolio_returns = _simulate_rebalanced_portfolio(returns, weights, rebalance_dates)
+    callout(
+        f"Cartera rebalanceada de vuelta al peso objetivo {n_rebalances} "
+        f"veces en el periodo (modo: {rebalance_mode.lower()}).",
+        variant="info",
+    )
+
 equity = initial_capital * (1 + portfolio_returns).cumprod()
 equity.iloc[0] = initial_capital
 
@@ -178,7 +254,11 @@ with st.form("save_portfolio_run", clear_on_submit=True):
             tickers=list(tickers),
             start_date=str(start),
             end_date=str(end),
-            params={"method": method, "weights": weights.round(4).to_dict()},
+            params={
+                "method": method, "weights": weights.round(4).to_dict(),
+                "rebalance_mode": rebalance_mode,
+                "n_rebalances": n_rebalances,
+            },
             metrics={
                 "sharpe": sharpe, "sortino": sortino, "calmar": calmar,
                 "max_drawdown": mdd,

@@ -4,6 +4,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from app.core.alerts import AlertDispatcher, check_backtest_rules, default_walkforward_rules
 from app.core.backtest import BacktestMode
 from app.core.cointegration import engle_granger
 from app.core.data_loader import load_prices
@@ -154,6 +155,39 @@ if run:
                     variant="warning")
         else:
             callout(f"Degradación aceptable: {degradation:.0%}.", variant="success")
+
+    section("🔔 Alertas")
+    triggered_alerts = check_backtest_rules(oos_m, rules=default_walkforward_rules())
+    if triggered_alerts:
+        for alert in triggered_alerts:
+            callout(alert.format_text().replace("\n", "<br>"), variant=alert.severity.value)
+        with st.form("dispatch_walkforward_alerts_form"):
+            st.caption(
+                "Evaluado contra `default_walkforward_rules()` (Sharpe OOS) "
+                "sobre las métricas agregadas out-of-sample. Para reglas "
+                "propias o configurar canales de envío, ve a 🔔 Alertas."
+            )
+            send_alerts = st.form_submit_button("📤 Enviar estas alertas por los canales configurados")
+        if send_alerts:
+            dispatcher = AlertDispatcher.from_env()
+            n_sent = sum(
+                1
+                for alert in triggered_alerts
+                for ok in dispatcher.dispatch(alert).values()
+                if ok
+            )
+            if n_sent:
+                st.success(f"{n_sent} envío(s) realizado(s) (consola/archivo siempre disponibles).")
+            else:
+                st.info(
+                    "No hay canales configurados más allá de consola/archivo "
+                    "-- configúralos en 🔔 Alertas para email/Telegram/Slack."
+                )
+    else:
+        callout(
+            "Ninguna regla por defecto de walk-forward se ha disparado.",
+            variant="success",
+        )
 
     section("📈 Curva de capital Out-of-Sample (compuesta)")
     fig = go.Figure()

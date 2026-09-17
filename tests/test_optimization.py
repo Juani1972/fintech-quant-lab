@@ -160,6 +160,50 @@ def test_deflated_sharpe_ratio_requires_sharpe_objective(prices_series):
         deflated_sharpe_ratio(result, prices_series.pct_change().dropna())
 
 
+def test_deflated_sharpe_ratio_from_walkforward_result(prices_series):
+    """Regresión: la página de Optimización usa grid_search_walkforward
+    (no grid_search), cuyo resultado es un WalkForwardOptimizationResult
+    con columnas 'oos_sharpe'/'is_sharpe' en el grid, no una columna
+    'sharpe' plana como espera deflated_sharpe_ratio (pensada para
+    OptimizationResult). La página adapta el resultado construyendo un
+    OptimizationResult con la columna renombrada -- este test fija que
+    esa adaptación produce un DSR válido, no solo que compile.
+    """
+    from app.core.backtest import run_backtest
+    from app.core.optimization import OptimizationResult
+    from app.core.walkforward import signal_from_momentum
+
+    def factory(params):
+        return signal_from_momentum(window=params["window"])
+
+    objective = "sharpe"
+    result = grid_search_walkforward(
+        prices=prices_series,
+        generator_factory=factory,
+        param_grid={"window": [10, 20, 30, 45, 60]},
+        objective=objective,
+        train_size=200,
+        test_size=63,
+    )
+
+    winning_generator = factory(result.best_params)
+    winning_signal = winning_generator(prices_series, prices_series)
+    winning_backtest = run_backtest(prices_series, winning_signal)
+
+    dsr_input = OptimizationResult(
+        grid=result.grid.rename(columns={f"oos_{objective}": objective}),
+        best_params=result.best_params,
+        best_metrics=result.best_oos_metrics,
+        objective=objective,
+        param_names=result.param_names,
+    )
+    dsr = deflated_sharpe_ratio(dsr_input, winning_backtest.returns)
+
+    assert 0.0 <= dsr["dsr"] <= 1.0
+    assert dsr["n_trials"] == 5
+    assert dsr["sr_std"] >= 0.0
+
+
 def test_grid_search_absolute_mode_on_spread(spread_series):
     """Regresión: grid_search debe poder optimizar sobre un spread que
     cruza cero (mode='absolute'), no solo sobre precios positivos.

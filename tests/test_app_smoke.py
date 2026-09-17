@@ -137,7 +137,8 @@ def test_portfolio_page_loads_and_runs_without_exception():
     """Página de Portfolio (HRP/Markowitz/Risk Parity): debe cargar sin
     excepción, mostrar el aviso inicial, y gestionar con gracia el
     fallo de red al pulsar 'Calcular cartera' (no hay red real a los
-    tickers de prueba en el entorno de test).
+    tickers de prueba en el entorno de test). Se prueban también los
+    3 modos de rebalanceo (sin rebalanceo, calendario, por desviación).
     """
     at = AppTest.from_file(str(APP_DIR / "pages" / "14_💼_Portfolio.py"), default_timeout=30)
     at.session_state["global_tickers"] = "AAA, BBB, CCC"
@@ -148,6 +149,14 @@ def test_portfolio_page_loads_and_runs_without_exception():
     assert len(buttons) == 1
     buttons[0].click().run()
     assert not at.exception
+
+    rebal_select = [s for s in at.sidebar.selectbox if "Modo" in (s.label or "")][0]
+    for mode in ["Calendario", "Por desviación"]:
+        rebal_select.select(mode).run()
+        assert not at.exception, f"Excepción con modo '{mode}': {at.exception}"
+        buttons = [b for b in at.sidebar.button if "Calcular cartera" in (b.label or "")]
+        buttons[0].click().run()
+        assert not at.exception, f"Excepción al calcular con modo '{mode}': {at.exception}"
 
 
 def test_estrategias_page_loads_and_switches_strategy():
