@@ -12,6 +12,7 @@ from app.core.backtest import (
     BacktestResult,
     benchmark_metrics,
     buy_and_hold,
+    plain_language_summary,
     run_backtest,
 )
 from app.core.cointegration import (
@@ -33,6 +34,7 @@ from app.state import (
 )
 from app.styles import (
     callout,
+    conclusion,
     data_preview,
     footer,
     hero,
@@ -418,6 +420,9 @@ if run:
     c3.metric("Sharpe", f"{result.metrics['sharpe']:.2f}")
     c4.metric("Max DD", f"{result.metrics['max_drawdown']:.2%}")
     c5.metric("Win rate", f"{result.metrics['win_rate']:.1%}")
+
+    conclusion_text, conclusion_variant = plain_language_summary(result)
+    conclusion(conclusion_text, variant=conclusion_variant)
 
     section("📈 Curva de capital")
     bh = buy_and_hold(benchmark_prices, initial_capital=initial_capital)

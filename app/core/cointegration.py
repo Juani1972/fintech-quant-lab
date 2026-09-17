@@ -176,3 +176,51 @@ def generate_signals(
             position = 0
         signals.iloc[i] = position
     return signals
+
+
+def plain_language_summary(result: CointegrationResult, half_life: float) -> tuple[str, str]:
+    """Traduce un CointegrationResult + half_life() a una frase de
+    conclusión en español llano, sin jerga estadística, para quien no
+    esté familiarizado con qué es un p-valor o un half-life.
+
+    Args:
+        result: resultado de `engle_granger()`.
+        half_life: resultado de `half_life()` sobre `result.spread`.
+
+    Returns:
+        (texto, variant) listo para pasar a `app.styles.conclusion()`.
+        variant es 'success' (par operable), 'warning' (cointegrado
+        pero con matices que lo hacen menos práctico) o 'danger' (sin
+        evidencia de cointegración).
+    """
+    if not result.is_cointegrated:
+        return (
+            f"El par <strong>no muestra evidencia de cointegración</strong> "
+            f"(p-valor {result.pvalue:.3f}, por encima del umbral habitual "
+            f"de 0.05) -- no hay base estadística para asumir que revierte "
+            f"a una relación estable. Operarlo como pairs trading sería más "
+            f"una apuesta direccional disfrazada que una estrategia real "
+            f"de reversión a la media.",
+            "danger",
+        )
+
+    if half_life == float("inf") or half_life > 60:
+        hl_text = "indefinida (no revierte de forma medible)" if half_life == float("inf") else f"muy lenta ({half_life:.0f} días)"
+        return (
+            f"El par está cointegrado (p-valor {result.pvalue:.3f}), pero "
+            f"la reversión es {hl_text} -- en la práctica, esperar a que "
+            f"el spread vuelva a su media puede tardar demasiado para "
+            f"que la estrategia sea operable una vez descontadas "
+            f"comisiones y el capital que quedaría inmovilizado.",
+            "warning",
+        )
+
+    speed = "rápida" if half_life <= 15 else "moderada"
+    return (
+        f"Par cointegrado (p-valor {result.pvalue:.3f}) con reversión "
+        f"{speed} (half-life de {half_life:.0f} días) -- candidato "
+        f"razonable para pairs trading, siempre que el resto de las "
+        f"métricas (z-score actual, correlación reciente) también lo "
+        f"respalden.",
+        "success",
+    )

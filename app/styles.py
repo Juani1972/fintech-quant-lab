@@ -225,6 +225,28 @@ def inject_css() -> None:
         .fql-callout-warning {{ background: {THEME["warning"]}15; border-color: {THEME["warning"]}; }}
         .fql-callout-danger  {{ background: {THEME["danger"]}10;  border-color: {THEME["danger"]}; }}
 
+        .fql-conclusion {{
+            padding: 16px 20px;
+            border-radius: 12px;
+            border: 2px solid;
+            margin: 1.2rem 0;
+            font-size: 1rem;
+            line-height: 1.5;
+        }}
+        .fql-conclusion-label {{
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            opacity: 0.75;
+            margin-bottom: 4px;
+            display: block;
+        }}
+        .fql-conclusion-success {{ background: {THEME["success"]}12; border-color: {THEME["success"]}; }}
+        .fql-conclusion-warning {{ background: {THEME["warning"]}18; border-color: {THEME["warning"]}; }}
+        .fql-conclusion-danger  {{ background: {THEME["danger"]}12;  border-color: {THEME["danger"]}; }}
+        .fql-conclusion-info    {{ background: {THEME["primary"]}12; border-color: {THEME["primary"]}; }}
+
         .fql-footer {{
             text-align: center;
             color: {THEME["muted"]};
@@ -298,6 +320,32 @@ def callout(text: str, variant: str = "info") -> None:
         variant = "info"
     st.markdown(
         f'<div class="fql-callout fql-callout-{variant}">{text}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def conclusion(text: str, variant: str = "info") -> None:
+    """Caja de conclusión en lenguaje llano, visualmente distinta de
+    `callout()` (borde completo en vez de solo lateral, más ancha) --
+    para la frase-resumen que traduce un resultado técnico ("p-valor
+    0.02, half-life 12 días") a una conclusión directa ("par
+    cointegrado que revierte rápido: candidato razonable"), pensada
+    para quien no conoce la jerga estadística/financiera de detrás.
+
+    Args:
+        text: la frase de conclusión, en español llano.
+        variant: 'info', 'success', 'warning', 'danger' -- success
+            para una lectura favorable, warning para una lectura
+            ambigua o con matices importantes, danger para una
+            lectura claramente desfavorable, info cuando no aplica
+            ninguna de las anteriores (p.ej. datos insuficientes).
+    """
+    if variant not in ("info", "success", "warning", "danger"):
+        variant = "info"
+    st.markdown(
+        f'<div class="fql-conclusion fql-conclusion-{variant}">'
+        f'<span class="fql-conclusion-label">🎯 Conclusión</span>{text}'
+        f'</div>',
         unsafe_allow_html=True,
     )
 

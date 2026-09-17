@@ -189,3 +189,77 @@ def forecast_volatility(result: GarchResult, horizon: int = 30) -> pd.Series:
     fc = result.model_result.forecast(horizon=horizon, reindex=False)
     var = fc.variance.iloc[-1]
     return np.sqrt(var) / result.rescale_factor
+
+
+def plain_language_summary(result: GarchResult, forecast: pd.Series) -> tuple[str, str]:
+    """Traduce un GarchResult + su pronóstico a una frase de
+    conclusión en español llano, sin jerga ("orden p/q", "AIC",
+    "estacionariedad del proceso"), para quien no esté familiarizado
+    con GARCH.
+
+    Args:
+        result: resultado de `fit_garch()`.
+        forecast: resultado de `forecast_volatility(result, ...)`.
+
+    Returns:
+        (texto, variant) listo para pasar a `app.styles.conclusion()`.
+        variant es 'danger' si el modelo no es fiable (no convergió o
+        no es estacionario), 'warning' si converge pero anticipa una
+        subida notable de volatilidad, 'success' en el resto de casos.
+    """
+    if not result.converged:
+        return (
+            "El optimizador <strong>no convergió</strong> al ajustar este "
+            "modelo -- los parámetros y cualquier lectura que se haga de "
+            "ellos no son fiables. Prueba con otro ticker, otro rango de "
+            "fechas, u otra combinación de p/q antes de confiar en este "
+            "resultado.",
+            "danger",
+        )
+
+    if not check_stationarity(result.params, result.model_type):
+        return (
+            "El modelo ajustado <strong>no es estacionario</strong> -- "
+            "según sus propios parámetros, la volatilidad no tendería a "
+            "estabilizarse en el largo plazo, sino a crecer sin límite. "
+            "Es una señal de que el modelo no encaja bien con estos "
+            "datos concretos; trátalo con cautela.",
+            "danger",
+        )
+
+    current_vol = float(result.conditional_volatility.iloc[-1])
+    historical_avg = float(result.conditional_volatility.mean())
+    forecast_end = float(forecast.iloc[-1])
+
+    vs_historical = current_vol / historical_avg if historical_avg > 0 else 1.0
+    if vs_historical > 1.3:
+        level_text = "por encima de lo habitual para este activo"
+    elif vs_historical < 0.7:
+        level_text = "por debajo de lo habitual para este activo"
+    else:
+        level_text = "en línea con lo habitual para este activo"
+
+    direction = forecast_end / current_vol if current_vol > 0 else 1.0
+    if direction > 1.15:
+        return (
+            f"La volatilidad actual está {level_text}, y el modelo "
+            f"anticipa que <strong>siga subiendo</strong> en los próximos "
+            f"días -- no dice en qué dirección se moverá el precio, solo "
+            f"que los movimientos (al alza o a la baja) podrían ser más "
+            f"bruscos de lo normal.",
+            "warning",
+        )
+    if direction < 0.85:
+        return (
+            f"La volatilidad actual está {level_text}, y el modelo "
+            f"anticipa que <strong>vaya bajando</strong> hacia niveles más "
+            f"tranquilos en los próximos días.",
+            "success",
+        )
+    return (
+        f"La volatilidad actual está {level_text}, y el modelo no "
+        f"anticipa un cambio notable en los próximos días -- se espera "
+        f"que el nivel actual de agitación del precio se mantenga "
+        f"parecido.",
+        "success",
+    )

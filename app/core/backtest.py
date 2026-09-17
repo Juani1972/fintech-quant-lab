@@ -392,3 +392,79 @@ def benchmark_metrics(
         "tracking_error": tracking_error,
         "information_ratio": information_ratio,
     }
+
+
+def plain_language_summary(result: BacktestResult) -> tuple[str, str]:
+    """Traduce las métricas de un BacktestResult a una frase de
+    conclusión en español llano, sin jerga ("Sharpe", "Calmar",
+    "drawdown"), para quien no esté familiarizado con backtesting.
+
+    Prioriza en este orden: fiabilidad del resultado (nº de
+    operaciones) antes que su calidad (Sharpe) -- un Sharpe
+    espectacular con 3 operaciones no es una buena estrategia, es
+    ruido con suerte.
+
+    Args:
+        result: resultado de `run_backtest()`.
+
+    Returns:
+        (texto, variant) listo para pasar a `app.styles.conclusion()`.
+    """
+    m = result.metrics
+    n_trades = int(m.get("n_trades", 0))
+    sharpe = m.get("sharpe", float("nan"))
+    max_dd = m.get("max_drawdown", 0.0)
+    total_return = m.get("total_return", 0.0)
+
+    if n_trades < 10:
+        return (
+            f"Solo {n_trades} operación(es) en todo el periodo -- "
+            f"demasiado pocas para sacar ninguna conclusión fiable. "
+            f"Cualquier métrica calculada con tan pocos datos (Sharpe "
+            f"incluido) puede deberse al azar, no a que la estrategia "
+            f"tenga una ventaja real. Prueba un rango de fechas más "
+            f"amplio o parámetros que generen más señales.",
+            "warning",
+        )
+
+    if pd.isna(sharpe) or sharpe < 0:
+        return (
+            f"La estrategia <strong>pierde dinero ajustado a riesgo</strong> "
+            f"en este periodo (retorno total {total_return:.1%}, con una "
+            f"caída máxima del {abs(max_dd):.1%} desde su punto más alto). "
+            f"No parece tener una ventaja real con esta configuración.",
+            "danger",
+        )
+
+    if sharpe > 3:
+        return (
+            "El resultado parece <strong>demasiado bueno</strong> (ratio "
+            "retorno/riesgo muy por encima de lo habitual incluso para "
+            "una buena estrategia real) -- antes de confiar en él, "
+            "revisa el Deflated Sharpe Ratio en la página de "
+            "Optimización: con pocas operaciones o muchos parámetros "
+            "probados, un resultado así suele deberse a sobreajuste, "
+            "no a una ventaja genuina.",
+            "warning",
+        )
+
+    if sharpe < 1:
+        return (
+            f"Retorno total del {total_return:.1%} con una caída máxima "
+            f"del {abs(max_dd):.1%} -- el resultado es mediocre en "
+            f"relación al riesgo asumido ({n_trades} operaciones). No es "
+            f"necesariamente malo, pero no destaca frente a alternativas "
+            f"más simples como comprar y mantener.",
+            "warning",
+        )
+
+    quality = "muy bueno" if sharpe >= 2 else "bueno"
+    return (
+        f"Resultado {quality}: retorno total del {total_return:.1%} con "
+        f"una caída máxima del {abs(max_dd):.1%}, sobre {n_trades} "
+        f"operaciones -- una relación retorno/riesgo sólida para este "
+        f"periodo. Antes de darlo por bueno del todo, compára con el "
+        f"benchmark (arriba) y confirma que se sostiene fuera de "
+        f"muestra en la página de Walk-Forward.",
+        "success",
+    )

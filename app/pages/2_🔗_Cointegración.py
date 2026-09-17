@@ -9,6 +9,7 @@ from app.core.cointegration import (
     engle_granger,
     generate_signals,
     half_life,
+    plain_language_summary,
     rolling_zscore,
 )
 from app.core.data_loader import load_prices
@@ -20,7 +21,7 @@ from app.state import (
     get_global_provider,
     get_global_provider_kwargs,
 )
-from app.styles import callout, data_preview, footer, hero, page_setup, section
+from app.styles import callout, conclusion, data_preview, footer, hero, page_setup, section
 
 page_setup("Cointegración", "🔗")
 
@@ -241,6 +242,9 @@ if run:
     else:
         callout("Half-life no definida (el spread no revierte a la media).",
                 variant="warning")
+
+    conclusion_text, conclusion_variant = plain_language_summary(result, hl)
+    conclusion(conclusion_text, variant=conclusion_variant)
 
     section(f"Z-score (ventana={window})")
     z = rolling_zscore(result.spread, window)

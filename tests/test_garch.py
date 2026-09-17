@@ -3,7 +3,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from app.core.garch import check_stationarity, fit_garch, forecast_volatility, is_stationary
+from app.core.garch import (
+    check_stationarity,
+    fit_garch,
+    forecast_volatility,
+    is_stationary,
+    plain_language_summary,
+)
 
 
 def test_fit_garch_runs():
@@ -102,3 +108,74 @@ def test_check_stationarity_unknown():
     params = pd.Series({"alpha[1]": 0.1})
     with pytest.raises(ValueError, match="no reconocido"):
         check_stationarity(params, "UNKNOWN")
+
+
+def _fake_garch_result(
+    converged=True, params=None, model_type="Garch",
+    conditional_volatility=None,
+):
+    """GarchResult mínimo construido a mano (sin ajustar de verdad),
+    para probar plain_language_summary() con cada rama de forma
+    determinista en vez de depender de que un ajuste real produzca el
+    caso concreto que se quiere probar."""
+    from app.core.garch import GarchResult
+
+    if params is None:
+        params = pd.Series({"alpha[1]": 0.05, "beta[1]": 0.90})  # estacionario
+    if conditional_volatility is None:
+        conditional_volatility = pd.Series([0.01] * 100)
+
+    return GarchResult(
+        model_result=None,
+        conditional_volatility=conditional_volatility,
+        standardized_residuals=pd.Series([0.0] * 100),
+        params=params,
+        pvalues=pd.Series(dict.fromkeys(params.index, 0.01)),
+        aic=100.0,
+        bic=110.0,
+        model_type=model_type,
+        converged=converged,
+        rescale_factor=1.0,
+    )
+
+
+def test_plain_language_summary_not_converged():
+    result = _fake_garch_result(converged=False)
+    text, variant = plain_language_summary(result, pd.Series([0.01] * 30))
+    assert variant == "danger"
+    assert "no convergió" in text
+
+
+def test_plain_language_summary_not_stationary():
+    non_stationary_params = pd.Series({"alpha[1]": 0.5, "beta[1]": 0.6})  # suma > 1
+    result = _fake_garch_result(params=non_stationary_params)
+    text, variant = plain_language_summary(result, pd.Series([0.01] * 30))
+    assert variant == "danger"
+    assert "no es estacionario" in text
+
+
+def test_plain_language_summary_rising_volatility():
+    cond_vol = pd.Series([0.01] * 100)  # actual y media histórica = 0.01
+    result = _fake_garch_result(conditional_volatility=cond_vol)
+    forecast = pd.Series([0.02] * 30)  # el pronóstico dobla la vol actual
+    text, variant = plain_language_summary(result, forecast)
+    assert variant == "warning"
+    assert "subiendo" in text
+
+
+def test_plain_language_summary_falling_volatility():
+    cond_vol = pd.Series([0.01] * 100)
+    result = _fake_garch_result(conditional_volatility=cond_vol)
+    forecast = pd.Series([0.005] * 30)  # el pronóstico es la mitad de la vol actual
+    text, variant = plain_language_summary(result, forecast)
+    assert variant == "success"
+    assert "bajando" in text
+
+
+def test_plain_language_summary_stable_volatility():
+    cond_vol = pd.Series([0.01] * 100)
+    result = _fake_garch_result(conditional_volatility=cond_vol)
+    forecast = pd.Series([0.0102] * 30)  # prácticamente igual
+    text, variant = plain_language_summary(result, forecast)
+    assert variant == "success"
+    assert "no anticipa un cambio notable" in text

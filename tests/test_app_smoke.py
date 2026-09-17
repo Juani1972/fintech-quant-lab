@@ -527,3 +527,22 @@ def test_named_config_manager_save_and_load_roundtrip(page_path, select_label, v
     uploader2 = at2.get("file_uploader")[0]
     uploader2.upload("mala.json", json.dumps(stale_config).encode("utf-8"), "application/json").run()
     assert not at2.exception
+
+
+@pytest.mark.parametrize(
+    "page_path",
+    ["2_🔗_Cointegración.py", "1_📈_GARCH.py", "5_🧪_Backtest.py"],
+)
+def test_plain_language_conclusion_pages_load_without_exception(page_path):
+    """Regresión: las 3 páginas con conclusión en lenguaje llano
+    (plain_language_summary + app.styles.conclusion()) deben seguir
+    cargando sin excepción. No ejercita la rama que llama a
+    conclusion() de verdad (necesita red real para cargar precios),
+    pero confirma que el cableado de imports no rompe la página --
+    la lógica de cada plain_language_summary() ya está cubierta con
+    tests deterministas en test_cointegration.py, test_garch.py y
+    test_backtest.py."""
+    at = AppTest.from_file(str(APP_DIR / "pages" / page_path), default_timeout=30)
+    at.session_state["global_tickers"] = "AAA, BBB"
+    at.run()
+    assert not at.exception

@@ -4,9 +4,11 @@ import pandas as pd
 import pytest
 
 from app.core.backtest import (
+    BacktestResult,
     benchmark_metrics,
     buy_and_hold,
     compare_to_benchmark,
+    plain_language_summary,
     run_backtest,
 )
 
@@ -294,3 +296,82 @@ def test_benchmark_metrics_rejects_constant_benchmark():
     flat_benchmark = pd.Series([100.0] * 10, index=dates)
     with pytest.raises(ValueError, match="varianza"):
         benchmark_metrics(strategy, flat_benchmark)
+
+
+def _fake_backtest_result(metrics: dict) -> BacktestResult:
+    """BacktestResult mínimo construido a mano (sin correr un backtest
+    de verdad), para probar plain_language_summary() con cada rama de
+    forma determinista en vez de tener que encontrar datos/semillas
+    que produzcan el caso concreto que se quiere probar."""
+    idx = pd.bdate_range("2023-01-01", periods=5)
+    return BacktestResult(
+        equity_curve=pd.Series([100_000.0] * 5, index=idx),
+        returns=pd.Series([0.0] * 5, index=idx),
+        positions=pd.Series([0] * 5, index=idx),
+        trades=pd.DataFrame(),
+        metrics=metrics,
+    )
+
+
+def test_plain_language_summary_too_few_trades():
+    result = _fake_backtest_result({
+        "n_trades": 3, "sharpe": 5.0, "max_drawdown": -0.05, "total_return": 0.20,
+    })
+    text, variant = plain_language_summary(result)
+    assert variant == "warning"
+    assert "demasiado pocas" in text
+    assert "3 operación" in text
+
+
+def test_plain_language_summary_negative_sharpe():
+    result = _fake_backtest_result({
+        "n_trades": 40, "sharpe": -0.3, "max_drawdown": -0.25, "total_return": -0.10,
+    })
+    text, variant = plain_language_summary(result)
+    assert variant == "danger"
+    assert "pierde dinero" in text
+
+
+def test_plain_language_summary_nan_sharpe_treated_as_negative():
+    result = _fake_backtest_result({
+        "n_trades": 40, "sharpe": float("nan"), "max_drawdown": -0.10, "total_return": 0.0,
+    })
+    text, variant = plain_language_summary(result)
+    assert variant == "danger"
+
+
+def test_plain_language_summary_suspiciously_high_sharpe():
+    result = _fake_backtest_result({
+        "n_trades": 40, "sharpe": 4.5, "max_drawdown": -0.03, "total_return": 0.50,
+    })
+    text, variant = plain_language_summary(result)
+    assert variant == "warning"
+    assert "demasiado bueno" in text
+    assert "Deflated Sharpe" in text
+
+
+def test_plain_language_summary_mediocre():
+    result = _fake_backtest_result({
+        "n_trades": 40, "sharpe": 0.5, "max_drawdown": -0.15, "total_return": 0.08,
+    })
+    text, variant = plain_language_summary(result)
+    assert variant == "warning"
+    assert "mediocre" in text
+
+
+def test_plain_language_summary_good():
+    result = _fake_backtest_result({
+        "n_trades": 40, "sharpe": 1.5, "max_drawdown": -0.10, "total_return": 0.25,
+    })
+    text, variant = plain_language_summary(result)
+    assert variant == "success"
+    assert "bueno" in text
+
+
+def test_plain_language_summary_very_good():
+    result = _fake_backtest_result({
+        "n_trades": 40, "sharpe": 2.5, "max_drawdown": -0.08, "total_return": 0.40,
+    })
+    text, variant = plain_language_summary(result)
+    assert variant == "success"
+    assert "muy bueno" in text

@@ -8,6 +8,7 @@ from app.core.garch import (
     check_stationarity,
     fit_garch,
     forecast_volatility,
+    plain_language_summary,
     residual_diagnostics,
 )
 from app.core.plotting import line_chart
@@ -19,6 +20,7 @@ from app.state import (
 )
 from app.styles import (
     callout,
+    conclusion,
     data_preview,
     footer,
     hero,
@@ -231,6 +233,9 @@ if run:
         line_chart(fc, "Pronóstico de volatilidad"),
         use_container_width=True,
     )
+
+    conclusion_text, conclusion_variant = plain_language_summary(result, fc)
+    conclusion(conclusion_text, variant=conclusion_variant)
 
     with st.expander("📋 Resumen completo del modelo"):
         st.text(result.model_result.summary().as_text())
