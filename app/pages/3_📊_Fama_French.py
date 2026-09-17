@@ -1,4 +1,6 @@
 """Página de regresión Fama-French con errores robustos HAC."""
+import json
+
 import streamlit as st
 
 from app.core.data_loader import compute_log_returns, load_prices
@@ -34,18 +36,75 @@ if not tickers:
 with st.sidebar:
     st.markdown("---")
     st.markdown("## 🎛️ Parámetros Fama-French")
-    ticker = st.selectbox("Ticker", tickers)
-    model = st.selectbox("Modelo", ["3", "5"], format_func=lambda x: f"{x} factores")
+
+    with st.expander("📂 Cargar / guardar configuración"):
+        st.caption("Guarda estos parámetros como JSON, o carga unos guardados antes.")
+        uploaded_config = st.file_uploader(
+            "Cargar configuración (JSON)", type="json", key="_ff_config_upload",
+        )
+        if uploaded_config is not None and st.session_state.get("_ff_config_applied") != uploaded_config.name:
+            try:
+                loaded_cfg = json.load(uploaded_config)
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                st.error(f"El archivo no es un JSON válido: {e}")
+            else:
+                skipped = []
+                ticker_val = loaded_cfg.get("ticker")
+                if ticker_val is not None:
+                    if ticker_val in tickers:
+                        st.session_state["ff_ticker"] = ticker_val
+                    else:
+                        skipped.append(f"ticker ('{ticker_val}' no está en tus tickers actuales)")
+                model_val = loaded_cfg.get("model")
+                if model_val is not None:
+                    if model_val in ["3", "5"]:
+                        st.session_state["ff_model"] = model_val
+                    else:
+                        skipped.append("model")
+                cov_val = loaded_cfg.get("cov_type")
+                if cov_val is not None:
+                    if cov_val in ["HAC", "HC3", "nonrobust"]:
+                        st.session_state["ff_cov_type"] = cov_val
+                    else:
+                        skipped.append("cov_type")
+                maxlags_val = loaded_cfg.get("maxlags")
+                if maxlags_val is not None:
+                    if isinstance(maxlags_val, int) and 0 <= maxlags_val <= 50:
+                        st.session_state["ff_maxlags"] = maxlags_val
+                    else:
+                        skipped.append("maxlags")
+                st.session_state["_ff_config_applied"] = uploaded_config.name
+                if skipped:
+                    st.warning(f"Cargado, salvo: {', '.join(skipped)} (fuera de rango o no aplicable ahora).")
+                else:
+                    st.success("Configuración cargada.")
+                st.rerun()
+
+    ticker = st.selectbox("Ticker", tickers, key="ff_ticker")
+    model = st.selectbox(
+        "Modelo", ["3", "5"], format_func=lambda x: f"{x} factores", key="ff_model",
+    )
     cov_type = st.selectbox(
         "Errores estándar",
         ["HAC", "HC3", "nonrobust"],
         index=0,
         help="HAC = Newey-West (robusto a heterocedasticidad y autocorrelación)",
+        key="ff_cov_type",
     )
     maxlags = st.number_input(
         "Lags HAC (0 = automático)",
         min_value=0, max_value=50, value=0, step=1,
+        key="ff_maxlags",
     )
+
+    current_config = {"ticker": ticker, "model": model, "cov_type": cov_type, "maxlags": maxlags}
+    st.download_button(
+        "💾 Guardar configuración actual (JSON)",
+        json.dumps(current_config, indent=2, ensure_ascii=False).encode("utf-8"),
+        file_name="famafrench_config.json",
+        mime="application/json",
+    )
+
     run = st.button("🚀 Ejecutar regresión", type="primary", use_container_width=True)
 
 

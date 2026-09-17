@@ -17,7 +17,15 @@ from app.state import (
     get_global_provider,
     get_global_provider_kwargs,
 )
-from app.styles import callout, data_preview, footer, hero, page_setup, section
+from app.styles import (
+    callout,
+    data_preview,
+    footer,
+    hero,
+    named_config_manager,
+    page_setup,
+    section,
+)
 
 page_setup("GARCH", "📈")
 
@@ -43,6 +51,37 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("## 🎛️ Parámetros GARCH")
 
+    def _apply_garch_config(loaded_cfg: dict) -> list[str]:
+        """Valida y aplica un dict de configuración al session_state de
+        los widgets de esta página. Compartida entre el archivo JSON
+        subido y las configuraciones nombradas de la sesión."""
+        skipped = []
+        ticker_val = loaded_cfg.get("ticker")
+        if ticker_val is not None:
+            if ticker_val in tickers:
+                st.session_state["garch_ticker"] = ticker_val
+            else:
+                skipped.append(f"ticker ('{ticker_val}' no está en tus tickers actuales)")
+        for field, key, lo, hi, options in [
+            ("p", "garch_p", 1, 3, None),
+            ("q", "garch_q", 1, 3, None),
+            ("vol", "garch_vol", None, None, ["Garch", "EGARCH", "GJR-GARCH"]),
+            ("dist", "garch_dist", None, None, ["normal", "t", "skewt", "ged"]),
+        ]:
+            val = loaded_cfg.get(field)
+            if val is None:
+                continue
+            if options is not None:
+                if val in options:
+                    st.session_state[key] = val
+                else:
+                    skipped.append(field)
+            elif lo is not None and hi is not None and isinstance(val, int) and lo <= val <= hi:
+                st.session_state[key] = val
+            else:
+                skipped.append(field)
+        return skipped
+
     with st.expander("📂 Cargar / guardar configuración"):
         st.caption("Guarda estos parámetros como JSON, o carga unos guardados antes.")
         uploaded_config = st.file_uploader(
@@ -54,37 +93,26 @@ with st.sidebar:
             except (json.JSONDecodeError, UnicodeDecodeError) as e:
                 st.error(f"El archivo no es un JSON válido: {e}")
             else:
-                skipped = []
-                ticker_val = loaded_cfg.get("ticker")
-                if ticker_val is not None:
-                    if ticker_val in tickers:
-                        st.session_state["garch_ticker"] = ticker_val
-                    else:
-                        skipped.append(f"ticker ('{ticker_val}' no está en tus tickers actuales)")
-                for field, key, lo, hi, options in [
-                    ("p", "garch_p", 1, 3, None),
-                    ("q", "garch_q", 1, 3, None),
-                    ("vol", "garch_vol", None, None, ["Garch", "EGARCH", "GJR-GARCH"]),
-                    ("dist", "garch_dist", None, None, ["normal", "t", "skewt", "ged"]),
-                ]:
-                    val = loaded_cfg.get(field)
-                    if val is None:
-                        continue
-                    if options is not None:
-                        if val in options:
-                            st.session_state[key] = val
-                        else:
-                            skipped.append(field)
-                    elif lo is not None and hi is not None and isinstance(val, int) and lo <= val <= hi:
-                        st.session_state[key] = val
-                    else:
-                        skipped.append(field)
+                skipped = _apply_garch_config(loaded_cfg)
                 st.session_state["_garch_config_applied"] = uploaded_config.name
                 if skipped:
                     st.warning(f"Cargado, salvo: {', '.join(skipped)} (fuera de rango o no aplicable ahora).")
                 else:
                     st.success("Configuración cargada.")
                 st.rerun()
+
+        st.markdown("---")
+        _garch_current_for_named = {
+            "ticker": st.session_state.get("garch_ticker"),
+            "p": st.session_state.get("garch_p"),
+            "q": st.session_state.get("garch_q"),
+            "vol": st.session_state.get("garch_vol"),
+            "dist": st.session_state.get("garch_dist"),
+        }
+        _garch_loaded_named = named_config_manager(_garch_current_for_named, "garch")
+        if _garch_loaded_named is not None:
+            _apply_garch_config(_garch_loaded_named)
+            st.rerun()
 
     ticker = st.selectbox("Ticker a modelar", tickers, key="garch_ticker")
     p = st.slider(

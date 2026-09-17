@@ -31,7 +31,15 @@ from app.state import (
     get_global_provider,
     get_global_provider_kwargs,
 )
-from app.styles import callout, data_preview, footer, hero, page_setup, section
+from app.styles import (
+    callout,
+    data_preview,
+    footer,
+    hero,
+    named_config_manager,
+    page_setup,
+    section,
+)
 
 page_setup("Backtest", "🧪")
 
@@ -195,6 +203,40 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("## 🧪 Configuración del backtest")
 
+    def _apply_bt_config(loaded_cfg: dict) -> list[str]:
+        """Valida y aplica un dict de configuración al session_state de
+        los widgets de esta página. Devuelve los campos ignorados
+        (ticker ya no válido, valor fuera de rango...). Compartida
+        entre el archivo JSON subido y las configuraciones nombradas
+        de la sesión, para no duplicar la validación en dos sitios."""
+        skipped = []
+        if loaded_cfg.get("strategy") in ["Pairs Trading", "Momentum", "Mean Reversion"]:
+            st.session_state["bt_strategy"] = loaded_cfg["strategy"]
+        elif "strategy" in loaded_cfg:
+            skipped.append("strategy")
+        for field, key in [("ticker_a", "bt_ticker_a"), ("ticker_b", "bt_ticker_b")]:
+            val = loaded_cfg.get(field)
+            if val is not None:
+                if val in tickers:
+                    st.session_state[key] = val
+                else:
+                    skipped.append(f"{field} ('{val}' no está en tus tickers actuales)")
+        for field, key, lo, hi in [
+            ("window", "bt_window", 5, 250),
+            ("entry", "bt_entry", 0.0, 3.0),
+            ("exit_", "bt_exit", 0.0, 1.5),
+            ("initial_capital", "bt_capital", 1_000, None),
+            ("commission", "bt_commission", 0.0, 0.05),
+            ("slippage", "bt_slippage", 0.0, 0.05),
+        ]:
+            val = loaded_cfg.get(field)
+            if val is not None:
+                if isinstance(val, (int, float)) and val >= lo and (hi is None or val <= hi):
+                    st.session_state[key] = val
+                else:
+                    skipped.append(field)
+        return skipped
+
     with st.expander("📂 Cargar / guardar configuración"):
         st.caption(
             "Guarda los parámetros actuales como JSON para reutilizarlos "
@@ -210,40 +252,30 @@ with st.sidebar:
             except (json.JSONDecodeError, UnicodeDecodeError) as e:
                 st.error(f"El archivo no es un JSON válido: {e}")
             else:
-                skipped = []
-                if loaded_cfg.get("strategy") in ["Pairs Trading", "Momentum", "Mean Reversion"]:
-                    st.session_state["bt_strategy"] = loaded_cfg["strategy"]
-                elif "strategy" in loaded_cfg:
-                    skipped.append("strategy")
-                for field, key in [
-                    ("ticker_a", "bt_ticker_a"), ("ticker_b", "bt_ticker_b"),
-                ]:
-                    val = loaded_cfg.get(field)
-                    if val is not None:
-                        if val in tickers:
-                            st.session_state[key] = val
-                        else:
-                            skipped.append(f"{field} ('{val}' no está en tus tickers actuales)")
-                for field, key, lo, hi in [
-                    ("window", "bt_window", 5, 250),
-                    ("entry", "bt_entry", 0.0, 3.0),
-                    ("exit_", "bt_exit", 0.0, 1.5),
-                    ("initial_capital", "bt_capital", 1_000, None),
-                    ("commission", "bt_commission", 0.0, 0.05),
-                    ("slippage", "bt_slippage", 0.0, 0.05),
-                ]:
-                    val = loaded_cfg.get(field)
-                    if val is not None:
-                        if isinstance(val, (int, float)) and val >= lo and (hi is None or val <= hi):
-                            st.session_state[key] = val
-                        else:
-                            skipped.append(field)
+                skipped = _apply_bt_config(loaded_cfg)
                 st.session_state["_bt_config_applied"] = uploaded_config.name
                 if skipped:
                     st.warning(f"Cargado, salvo: {', '.join(skipped)} (fuera de rango o no aplicable ahora).")
                 else:
                     st.success("Configuración cargada.")
                 st.rerun()
+
+        st.markdown("---")
+        _bt_current_for_named = {
+            "strategy": st.session_state.get("bt_strategy"),
+            "ticker_a": st.session_state.get("bt_ticker_a"),
+            "ticker_b": st.session_state.get("bt_ticker_b"),
+            "window": st.session_state.get("bt_window"),
+            "entry": st.session_state.get("bt_entry"),
+            "exit_": st.session_state.get("bt_exit"),
+            "initial_capital": st.session_state.get("bt_capital"),
+            "commission": st.session_state.get("bt_commission"),
+            "slippage": st.session_state.get("bt_slippage"),
+        }
+        _bt_loaded_named = named_config_manager(_bt_current_for_named, "bt")
+        if _bt_loaded_named is not None:
+            _apply_bt_config(_bt_loaded_named)
+            st.rerun()
 
     strategy = st.selectbox(
         "Estrategia",

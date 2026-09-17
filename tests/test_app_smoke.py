@@ -421,7 +421,77 @@ def test_config_upload_roundtrip_extended(page_path, valid_config, label, expect
     assert not at2.exception
 
 
-def test_estrategias_page_config_upload_roundtrip():
+def test_famafrench_page_config_upload_roundtrip():
+    """Regresión: Fama-French quedó fuera por accidente de la primera
+    ronda de guardar/cargar configuración -- se añadió después al
+    revisar el conteo final de páginas cubiertas."""
+    import json
+
+    at = AppTest.from_file(str(APP_DIR / "pages" / "3_📊_Fama_French.py"), default_timeout=30)
+    at.session_state["global_tickers"] = "AAA, BBB"
+    at.run()
+    assert not at.exception
+
+    valid_config = {"ticker": "BBB", "model": "5", "cov_type": "HC3", "maxlags": 10}
+    uploader = at.get("file_uploader")[0]
+    uploader.upload("config.json", json.dumps(valid_config).encode("utf-8"), "application/json").run()
+    assert not at.exception
+    ticker_select = [s for s in at.sidebar.selectbox if s.label == "Ticker"][0]
+    model_select = [s for s in at.sidebar.selectbox if s.label == "Modelo"][0]
+    assert ticker_select.value == "BBB"
+    assert model_select.value == "5"
+
+    at2 = AppTest.from_file(str(APP_DIR / "pages" / "3_📊_Fama_French.py"), default_timeout=30)
+    at2.session_state["global_tickers"] = "AAA, BBB"
+    at2.run()
+    stale_config = {"ticker": "ZZZ_NO_EXISTE", "model": "NO_EXISTE", "maxlags": 9999}
+    uploader2 = at2.get("file_uploader")[0]
+    uploader2.upload("mala.json", json.dumps(stale_config).encode("utf-8"), "application/json").run()
+    assert not at2.exception
+
+
+@pytest.mark.parametrize(
+    "page_path,select_label,value_before,value_after",
+    [
+        ("5_🧪_Backtest.py", "Estrategia", "Momentum", "Mean Reversion"),
+        ("1_📈_GARCH.py", "Tipo de modelo", "EGARCH", "Garch"),
+    ],
+)
+def test_named_config_manager_save_and_load_roundtrip(page_path, select_label, value_before, value_after):
+    """Regresión: guardar una configuración con nombre en la sesión
+    (named_config_manager) y volver a cargarla debe restaurar el
+    valor guardado -- sin depender de subir/descargar ningún archivo.
+    """
+    full_path = str(APP_DIR / "pages" / page_path)
+    at = AppTest.from_file(full_path, default_timeout=30)
+    at.session_state["global_tickers"] = "AAA, BBB"
+    at.run()
+    assert not at.exception
+
+    sel = [s for s in at.sidebar.selectbox if s.label == select_label][0]
+    sel.select(value_before).run()
+    assert not at.exception
+
+    name_input = [t for t in at.sidebar.text_input if "Nombre para guardar" in (t.label or "")][0]
+    name_input.set_value("config_de_test").run()
+    save_btn = [b for b in at.sidebar.button if "Guardar con este nombre" in (b.label or "")][0]
+    save_btn.click().run()
+    assert not at.exception
+
+    sel2 = [s for s in at.sidebar.selectbox if s.label == select_label][0]
+    sel2.select(value_after).run()
+    assert not at.exception
+
+    load_btn = [b for b in at.sidebar.button if b.label == "📂 Cargar"][0]
+    load_btn.click().run()
+    assert not at.exception
+
+    sel3 = [s for s in at.sidebar.selectbox if s.label == select_label][0]
+    assert sel3.value == value_before
+
+    delete_btn = [b for b in at.sidebar.button if b.label == "🗑️ Borrar"][0]
+    delete_btn.click().run()
+    assert not at.exception
     """Regresión: Estrategias es la más compleja (6 estrategias, cada
     una con su propio conjunto de parámetros, algunos con el mismo
     nombre pero rangos distintos entre estrategias) -- confirma que

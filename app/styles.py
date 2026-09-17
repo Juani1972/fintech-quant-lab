@@ -361,6 +361,74 @@ def data_preview(prices: pd.DataFrame) -> None:
         st.dataframe(prices.describe().T, use_container_width=True)
 
 
+def named_config_manager(current_config: dict, page_key: str) -> dict | None:
+    """Guardar/cargar varias configuraciones con nombre, dentro de la
+    sesión del propio usuario -- NO en disco del servidor. Cada
+    usuario ve solo las suyas y desaparecen al cerrar la sesión; es la
+    forma segura de dar esta comodidad en una app que puede tener
+    varios usuarios a la vez (guardar en una carpeta compartida del
+    servidor, como haría un `os.listdir()` de un directorio local,
+    dejaría ver -- y cargar -- las configuraciones de otros usuarios).
+
+    Se usa junto al guardar/cargar por archivo JSON que ya tiene cada
+    página (ese sigue siendo la forma de llevarte una configuración
+    fuera de la sesión actual, p.ej. a otro ordenador); esto es solo
+    para ir y venir rápido entre varias configuraciones sin tener que
+    descargar/subir un archivo cada vez.
+
+    Args:
+        current_config: dict con los valores actuales de los widgets
+            de la página, para ofrecer guardarlos.
+        page_key: prefijo único de la página (p.ej. "bt", "garch"),
+            para no mezclar los nombres guardados entre páginas.
+
+    Returns:
+        El dict de la configuración elegida, si el usuario pulsa
+        "Cargar" en este rerun -- la propia página es responsable de
+        aplicarlo con la misma validación que ya usa para el archivo
+        JSON subido (comprobar que tickers/opciones siguen siendo
+        válidos, valores dentro de rango, etc.). None si no se ha
+        pulsado nada.
+    """
+    store_key = f"_named_configs_{page_key}"
+    if store_key not in st.session_state:
+        st.session_state[store_key] = {}
+    store = st.session_state[store_key]
+
+    st.caption(
+        "Guarda varias configuraciones con nombre para ir cambiando entre "
+        "ellas rápido -- solo dura mientras tengas esta pestaña abierta y "
+        "solo tú las ves. Para guardarlas de verdad (o llevártelas a otro "
+        "ordenador), usa el JSON de arriba."
+    )
+    name = st.text_input("Nombre para guardar", key=f"_{page_key}_named_config_input")
+    if st.button("💾 Guardar con este nombre", key=f"_{page_key}_named_config_save"):
+        clean_name = name.strip()
+        if not clean_name:
+            st.error("Indica un nombre.")
+        else:
+            store[clean_name] = current_config
+            st.success(f"Guardada como '{clean_name}' (solo en esta sesión).")
+
+    if not store:
+        return None
+
+    selected = st.selectbox(
+        "Configuraciones guardadas en esta sesión", list(store.keys()),
+        key=f"_{page_key}_named_config_select",
+    )
+    col_load, col_delete = st.columns(2)
+    result = None
+    with col_load:
+        if st.button("📂 Cargar", key=f"_{page_key}_named_config_load"):
+            result = store[selected]
+    with col_delete:
+        if st.button("🗑️ Borrar", key=f"_{page_key}_named_config_delete"):
+            del store[selected]
+            st.rerun()
+    return result
+
+
 def footer() -> None:
     """Pie de página."""
     st.markdown(
