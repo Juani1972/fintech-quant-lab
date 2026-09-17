@@ -8,6 +8,7 @@ from app.core.alerts import AlertDispatcher, check_backtest_rules, default_walkf
 from app.core.backtest import BacktestMode
 from app.core.cointegration import engle_granger
 from app.core.data_loader import load_prices
+from app.core.report import build_walkforward_report
 from app.core.walkforward import (
     signal_from_mean_reversion,
     signal_from_momentum,
@@ -224,6 +225,33 @@ if run:
         comparison.to_csv().encode("utf-8"),
         file_name="walkforward_comparison.csv",
     )
+
+    section("📄 Informe HTML")
+    callout(
+        "Descarga un informe HTML autocontenido con la curva OOS y la "
+        "comparación IS/OOS, para compartir por email o archivar.",
+        variant="info",
+    )
+    try:
+        wf_report_html = build_walkforward_report(
+            strategy=strategy,
+            tickers=tickers,
+            start_date=str(start),
+            end_date=str(end),
+            params=result.params,
+            is_metrics=result.is_metrics_agg,
+            oos_metrics=result.oos_metrics_agg,
+            oos_equity=result.oos_equity_concat,
+            n_windows=result.params["n_windows"],
+        )
+        st.download_button(
+            "📄 Descargar informe HTML",
+            wf_report_html.encode("utf-8"),
+            file_name=f"walkforward_report_{strategy.replace(' ', '_').lower()}.html",
+            mime="text/html",
+        )
+    except Exception as e:
+        callout(f"No se pudo generar el informe: {e}", variant="warning")
 
 else:
     callout(

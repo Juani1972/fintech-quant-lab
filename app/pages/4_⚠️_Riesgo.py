@@ -2,6 +2,7 @@
 import streamlit as st
 
 from app.core.data_loader import compute_log_returns, load_prices
+from app.core.garch import fit_garch, forecast_volatility
 from app.core.plotting import drawdown_chart, line_chart
 from app.core.risk import (
     calmar_ratio,
@@ -14,6 +15,7 @@ from app.core.risk import (
     sortino_ratio,
     value_at_risk,
     value_at_risk_cornish_fisher,
+    value_at_risk_filtered_historical,
     value_at_risk_parametric,
 )
 from app.state import ensure_session_initialized, get_global_params
@@ -57,7 +59,7 @@ if run:
     returns = compute_log_returns(prices)[ticker]
 
     section("📉 VaR y Expected Shortfall")
-    c1, c2, c3, c4, c5 = st.columns(5)
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric(f"VaR hist. {confidence:.0%}", f"{value_at_risk(returns, confidence):.4%}")
     c2.metric(
         f"VaR param. {confidence:.0%}",
@@ -69,8 +71,23 @@ if run:
         help="VaR paramétrico ajustado por la asimetría y curtosis "
              "reales de los retornos, en vez de asumir normalidad pura.",
     )
-    c4.metric(f"ES hist. {confidence:.0%}", f"{expected_shortfall(returns, confidence):.4%}")
-    c5.metric(
+    try:
+        garch_result = fit_garch(returns)
+        forecast_vol = float(forecast_volatility(garch_result, horizon=1).iloc[0])
+        var_fhs = value_at_risk_filtered_historical(
+            returns, garch_result.conditional_volatility, forecast_vol, confidence,
+        )
+        c4.metric(
+            f"VaR filtrado (GARCH) {confidence:.0%}", f"{var_fhs:.4%}",
+            help="Simulación histórica filtrada: reescala los retornos "
+                 "históricos por la volatilidad GARCH pronosticada para "
+                 "hoy, en vez de asumir que la volatilidad futura será "
+                 "igual al promedio de todo el histórico.",
+        )
+    except Exception as e:
+        c4.metric(f"VaR filtrado (GARCH) {confidence:.0%}", "—", help=str(e))
+    c5.metric(f"ES hist. {confidence:.0%}", f"{expected_shortfall(returns, confidence):.4%}")
+    c6.metric(
         f"ES param. {confidence:.0%}",
         f"{expected_shortfall_parametric(returns, confidence):.4%}",
     )

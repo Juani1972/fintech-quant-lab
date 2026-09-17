@@ -182,3 +182,21 @@ def test_papertrading_page_without_credentials():
     at = AppTest.from_file(str(APP_DIR / "pages" / "16_📟_Papertrading.py"), default_timeout=30)
     at.run()
     assert not at.exception
+
+
+def test_walkforward_page_loads_without_exception():
+    """Página de WalkForward, con la nueva sección de informe HTML y
+    alertas: debe cargar sin excepción."""
+    at = AppTest.from_file(str(APP_DIR / "pages" / "6_🔬_WalkForward.py"), default_timeout=30)
+    at.session_state["global_tickers"] = "AAA"
+    at.run()
+    assert not at.exception
+
+
+def test_riesgo_page_loads_with_filtered_var():
+    """Página de Riesgo, con el VaR filtrado por GARCH añadido: debe
+    cargar sin excepción."""
+    at = AppTest.from_file(str(APP_DIR / "pages" / "4_⚠️_Riesgo.py"), default_timeout=30)
+    at.session_state["global_tickers"] = "AAA"
+    at.run()
+    assert not at.exception
