@@ -546,3 +546,33 @@ def test_plain_language_conclusion_pages_load_without_exception(page_path):
     at.session_state["global_tickers"] = "AAA, BBB"
     at.run()
     assert not at.exception
+
+
+def test_data_preview_offers_raw_price_download():
+    """Regresión: data_preview() debe ofrecer un botón para descargar
+    los precios en bruto, no solo el gráfico/estadísticas -- para que
+    el usuario pueda cruzar los datos con otra fuente y verificar los
+    cálculos por su cuenta.
+
+    Se prueba con un script mínimo que llama a data_preview()
+    directamente con datos sintéticos, en vez de a través de una
+    página real -- load_prices() necesita red real, que AppTest no
+    tiene, así que probar vía una página nunca llegaría a ejecutar
+    data_preview() en absoluto.
+    """
+    script = """
+import pandas as pd
+from app.styles import data_preview
+
+prices = pd.DataFrame(
+    {"AAA": [100.0, 101.0, 102.0], "BBB": [50.0, 50.5, 51.0]},
+    index=pd.bdate_range("2023-01-02", periods=3),
+)
+data_preview(prices)
+"""
+    at = AppTest.from_string(script, default_timeout=30)
+    at.run()
+    assert not at.exception
+
+    download_labels = [b.label for b in at.get("download_button")]
+    assert any("Descargar estos precios" in (label or "") for label in download_labels)
