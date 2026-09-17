@@ -1,4 +1,6 @@
 """Página de análisis de robustez."""
+import json
+
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -51,30 +53,76 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("## 🎛️ Configuración Robustez")
 
+    with st.expander("📂 Cargar / guardar configuración"):
+        st.caption("Guarda estos parámetros como JSON, o carga unos guardados antes.")
+        uploaded_config = st.file_uploader(
+            "Cargar configuración (JSON)", type="json", key="_rob_config_upload",
+        )
+        if uploaded_config is not None and st.session_state.get("_rob_config_applied") != uploaded_config.name:
+            try:
+                loaded_cfg = json.load(uploaded_config)
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                st.error(f"El archivo no es un JSON válido: {e}")
+            else:
+                skipped = []
+                if loaded_cfg.get("strategy") in ["Momentum", "Mean Reversion", "Pairs Trading (spread)"]:
+                    st.session_state["rob_strategy"] = loaded_cfg["strategy"]
+                elif "strategy" in loaded_cfg:
+                    skipped.append("strategy")
+                for field, key in [("t1", "rob_t1"), ("t2", "rob_t2")]:
+                    val = loaded_cfg.get(field)
+                    if val is not None:
+                        if val in tickers:
+                            st.session_state[key] = val
+                        else:
+                            skipped.append(f"{field} ('{val}' no está en tus tickers actuales)")
+                for field, key, lo, hi in [
+                    ("window", "rob_window", 20, 200),
+                    ("entry", "rob_entry", 0.5, 3.0),
+                    ("train_size", "rob_train_size", 200, 1000),
+                    ("test_size", "rob_test_size", 21, 250),
+                    ("n_sims", "rob_n_sims", 200, 5000),
+                    ("block_size", "rob_block_size", 1, 20),
+                ]:
+                    val = loaded_cfg.get(field)
+                    if val is not None:
+                        if isinstance(val, (int, float)) and lo <= val <= hi:
+                            st.session_state[key] = val
+                        else:
+                            skipped.append(field)
+                st.session_state["_rob_config_applied"] = uploaded_config.name
+                if skipped:
+                    st.warning(f"Cargado, salvo: {', '.join(skipped)} (fuera de rango o no aplicable ahora).")
+                else:
+                    st.success("Configuración cargada.")
+                st.rerun()
+
     strategy = st.selectbox(
         "Estrategia",
         ["Momentum", "Mean Reversion", "Pairs Trading (spread)"],
+        key="rob_strategy",
     )
 
     if strategy == "Pairs Trading (spread)":
         if len(tickers) < 2:
             callout("Pairs Trading requiere al menos 2 tickers.", variant="warning")
             st.stop()
-        t1 = st.selectbox("Ticker 1", tickers, index=0)
-        t2: str | None = st.selectbox("Ticker 2", tickers, index=1)
+        t1 = st.selectbox("Ticker 1", tickers, index=0, key="rob_t1")
+        t2: str | None = st.selectbox("Ticker 2", tickers, index=1, key="rob_t2")
     else:
-        t1 = st.selectbox("Ticker", tickers, index=0)
+        t1 = st.selectbox("Ticker", tickers, index=0, key="rob_t1")
         t2 = None
 
     st.markdown("**Parámetros base**")
-    window = st.slider("Ventana", 20, 200, 60, 5)
+    window = st.slider("Ventana", 20, 200, 60, 5, key="rob_window")
     entry: float | None = (
-        st.slider("Umbral entrada", 0.5, 3.0, 2.0, 0.1) if strategy != "Momentum" else None
+        st.slider("Umbral entrada", 0.5, 3.0, 2.0, 0.1, key="rob_entry")
+        if strategy != "Momentum" else None
     )
 
     st.markdown("**Walk-forward**")
-    train_size = st.slider("Train", 200, 1000, 504, 21)
-    test_size = st.slider("Test", 21, 250, 126, 21)
+    train_size = st.slider("Train", 200, 1000, 504, 21, key="rob_train_size")
+    test_size = st.slider("Test", 21, 250, 126, 21, key="rob_test_size")
 
     st.markdown("**Monte Carlo**")
     n_sims = st.slider(
@@ -84,6 +132,7 @@ with st.sidebar:
             "los retornos históricos. Más simulaciones = estimación más "
             "estable del rango de resultados posibles, pero más lento."
         ),
+        key="rob_n_sims",
     )
     block_size = st.slider(
         "Block size", 1, 20, 1, 1,
@@ -95,6 +144,19 @@ with st.sidebar:
             "temporal (clustering de volatilidad) que un bootstrap "
             "clásico destruiría."
         ),
+        key="rob_block_size",
+    )
+
+    current_config = {
+        "strategy": strategy, "t1": t1, "t2": t2, "window": window, "entry": entry,
+        "train_size": train_size, "test_size": test_size,
+        "n_sims": n_sims, "block_size": block_size,
+    }
+    st.download_button(
+        "💾 Guardar configuración actual (JSON)",
+        json.dumps(current_config, indent=2, ensure_ascii=False).encode("utf-8"),
+        file_name="robustez_config.json",
+        mime="application/json",
     )
 
     run = st.button("🚀 Analizar robustez", type="primary", use_container_width=True)

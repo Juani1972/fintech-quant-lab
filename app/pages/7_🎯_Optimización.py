@@ -1,4 +1,6 @@
 """Página de optimización de parámetros con walk-forward."""
+import json
+
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -49,9 +51,84 @@ if len(tickers) < 1:
 with st.sidebar:
     st.markdown("---")
     st.markdown("## 🎛️ Configuración")
+
+    with st.expander("📂 Cargar / guardar configuración"):
+        st.caption("Guarda estos parámetros como JSON, o carga unos guardados antes.")
+        uploaded_config = st.file_uploader(
+            "Cargar configuración (JSON)", type="json", key="_opt_config_upload",
+        )
+        if uploaded_config is not None and st.session_state.get("_opt_config_applied") != uploaded_config.name:
+            try:
+                loaded_cfg = json.load(uploaded_config)
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                st.error(f"El archivo no es un JSON válido: {e}")
+            else:
+                skipped = []
+                loaded_strategy = loaded_cfg.get("strategy")
+                if loaded_strategy in ["Momentum", "Mean Reversion", "Pairs Trading (spread)"]:
+                    st.session_state["opt_strategy"] = loaded_strategy
+                elif "strategy" in loaded_cfg:
+                    skipped.append("strategy")
+                for field, key in [("t1", "opt_t1"), ("t2", "opt_t2")]:
+                    val = loaded_cfg.get(field)
+                    if val is not None:
+                        if val in tickers:
+                            st.session_state[key] = val
+                        else:
+                            skipped.append(f"{field} ('{val}' no está en tus tickers actuales)")
+                # multiselect: cada opción disponible depende de la estrategia
+                # (cargada arriba, o la ya presente en sesión) -- se filtran
+                # los valores del JSON a los que de verdad son opciones
+                # válidas para esa estrategia, en vez de rechazar la lista
+                # entera si un solo valor no encaja.
+                effective_strategy = loaded_strategy or st.session_state.get("opt_strategy", "Momentum")
+                if effective_strategy == "Momentum":
+                    windows_opts = [10, 20, 30, 45, 60, 90, 120]
+                else:
+                    windows_opts = [20, 30, 45, 60, 90, 120]
+                windows_val = loaded_cfg.get("windows")
+                if windows_val is not None:
+                    valid_windows = [w for w in windows_val if w in windows_opts]
+                    if valid_windows:
+                        st.session_state["opt_windows"] = valid_windows
+                    if len(valid_windows) < len(windows_val):
+                        skipped.append("algunas ventanas (no válidas para esta estrategia/grid)")
+                if effective_strategy != "Momentum":
+                    entries_val = loaded_cfg.get("entries")
+                    entries_opts = [1.0, 1.5, 2.0, 2.5, 3.0]
+                    if entries_val is not None:
+                        valid_entries = [e for e in entries_val if e in entries_opts]
+                        if valid_entries:
+                            st.session_state["opt_entries"] = valid_entries
+                        if len(valid_entries) < len(entries_val):
+                            skipped.append("algunos umbrales de entrada")
+                objective_val = loaded_cfg.get("objective")
+                if objective_val is not None:
+                    if objective_val in ["sharpe", "sortino", "calmar", "total_return"]:
+                        st.session_state["opt_objective"] = objective_val
+                    else:
+                        skipped.append("objective")
+                for field, key, lo, hi in [
+                    ("train_size", "opt_train_size", 200, 1000),
+                    ("test_size", "opt_test_size", 21, 250),
+                ]:
+                    val = loaded_cfg.get(field)
+                    if val is not None:
+                        if isinstance(val, (int, float)) and lo <= val <= hi:
+                            st.session_state[key] = val
+                        else:
+                            skipped.append(field)
+                st.session_state["_opt_config_applied"] = uploaded_config.name
+                if skipped:
+                    st.warning(f"Cargado, salvo: {', '.join(skipped)} (fuera de rango o no aplicable ahora).")
+                else:
+                    st.success("Configuración cargada.")
+                st.rerun()
+
     strategy = st.selectbox(
         "Estrategia",
         ["Momentum", "Mean Reversion", "Pairs Trading (spread)"],
+        key="opt_strategy",
     )
 
     t2: str | None
@@ -60,10 +137,10 @@ with st.sidebar:
         if len(tickers) < 2:
             callout("Pairs Trading requiere al menos 2 tickers.", variant="warning")
             st.stop()
-        t1 = st.selectbox("Ticker 1", tickers, index=0)
-        t2 = st.selectbox("Ticker 2", tickers, index=1)
+        t1 = st.selectbox("Ticker 1", tickers, index=0, key="opt_t1")
+        t2 = st.selectbox("Ticker 2", tickers, index=1, key="opt_t2")
     else:
-        t1 = st.selectbox("Ticker", tickers, index=0)
+        t1 = st.selectbox("Ticker", tickers, index=0, key="opt_t1")
         t2 = None
 
     st.markdown("**Grid de parámetros**")
@@ -71,16 +148,19 @@ with st.sidebar:
         windows = st.multiselect(
             "Ventanas a probar", [10, 20, 30, 45, 60, 90, 120],
             default=[20, 45, 60],
+            key="opt_windows",
         )
         entries = None
     else:
         windows = st.multiselect(
             "Ventanas Z-score", [20, 30, 45, 60, 90, 120],
             default=[30, 60, 90],
+            key="opt_windows",
         )
         entries = st.multiselect(
             "Umbrales de entrada", [1.0, 1.5, 2.0, 2.5, 3.0],
             default=[1.5, 2.0, 2.5],
+            key="opt_entries",
         )
 
     objective = st.selectbox(
@@ -92,15 +172,30 @@ with st.sidebar:
             "el estándar; Sortino penaliza solo la volatilidad a la baja; "
             "Calmar prioriza el ratio retorno/drawdown."
         ),
+        key="opt_objective",
     )
 
     train_size = st.slider(
         "Train size", 200, 1000, 504, 21,
         help="Días usados para ajustar cada combinación del grid, antes de evaluarla out-of-sample.",
+        key="opt_train_size",
     )
     test_size = st.slider(
         "Test size", 21, 250, 126, 21,
         help="Días usados para evaluar cada combinación -- esto es lo que de verdad puntúa cada casilla del grid.",
+        key="opt_test_size",
+    )
+
+    current_config = {
+        "strategy": strategy, "t1": t1, "t2": t2,
+        "windows": windows, "entries": entries, "objective": objective,
+        "train_size": train_size, "test_size": test_size,
+    }
+    st.download_button(
+        "💾 Guardar configuración actual (JSON)",
+        json.dumps(current_config, indent=2, ensure_ascii=False).encode("utf-8"),
+        file_name="optimizacion_config.json",
+        mime="application/json",
     )
 
     run = st.button("🚀 Optimizar", type="primary", use_container_width=True)

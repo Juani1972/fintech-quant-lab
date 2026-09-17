@@ -1,4 +1,6 @@
 """Página de walk-forward analysis."""
+import json
+
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -48,19 +50,64 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("## 🎛️ Configuración Walk-Forward")
 
+    with st.expander("📂 Cargar / guardar configuración"):
+        st.caption("Guarda estos parámetros como JSON, o carga unos guardados antes.")
+        uploaded_config = st.file_uploader(
+            "Cargar configuración (JSON)", type="json", key="_wf_config_upload",
+        )
+        if uploaded_config is not None and st.session_state.get("_wf_config_applied") != uploaded_config.name:
+            try:
+                loaded_cfg = json.load(uploaded_config)
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                st.error(f"El archivo no es un JSON válido: {e}")
+            else:
+                skipped = []
+                if loaded_cfg.get("strategy") in ["Pairs Trading (spread)", "Momentum", "Mean Reversion"]:
+                    st.session_state["wf_strategy"] = loaded_cfg["strategy"]
+                elif "strategy" in loaded_cfg:
+                    skipped.append("strategy")
+                for field, key in [("t1", "wf_t1"), ("t2", "wf_t2")]:
+                    val = loaded_cfg.get(field)
+                    if val is not None:
+                        if val in tickers:
+                            st.session_state[key] = val
+                        else:
+                            skipped.append(f"{field} ('{val}' no está en tus tickers actuales)")
+                for field, key, lo, hi in [
+                    ("train_size", "wf_train_size", 100, 1000),
+                    ("test_size", "wf_test_size", 21, 500),
+                    ("step", "wf_step", 21, 250),
+                    ("initial_capital", "wf_capital", 1_000, None),
+                    ("commission", "wf_commission", 0.0, 0.05),
+                    ("slippage", "wf_slippage", 0.0, 0.05),
+                ]:
+                    val = loaded_cfg.get(field)
+                    if val is not None:
+                        if isinstance(val, (int, float)) and val >= lo and (hi is None or val <= hi):
+                            st.session_state[key] = val
+                        else:
+                            skipped.append(field)
+                st.session_state["_wf_config_applied"] = uploaded_config.name
+                if skipped:
+                    st.warning(f"Cargado, salvo: {', '.join(skipped)} (fuera de rango o no aplicable ahora).")
+                else:
+                    st.success("Configuración cargada.")
+                st.rerun()
+
     strategy = st.selectbox(
         "Estrategia",
         ["Pairs Trading (spread)", "Momentum", "Mean Reversion"],
+        key="wf_strategy",
     )
 
     if strategy == "Pairs Trading (spread)":
         if len(tickers) < 2:
             callout("Pairs Trading requiere al menos 2 tickers.", variant="warning")
             st.stop()
-        t1 = st.selectbox("Ticker 1", tickers, index=0)
-        t2: str | None = st.selectbox("Ticker 2", tickers, index=1)
+        t1 = st.selectbox("Ticker 1", tickers, index=0, key="wf_t1")
+        t2: str | None = st.selectbox("Ticker 2", tickers, index=1, key="wf_t2")
     else:
-        t1 = st.selectbox("Ticker", tickers, index=0)
+        t1 = st.selectbox("Ticker", tickers, index=0, key="wf_t1")
         t2 = None
 
     train_size = st.slider(
@@ -71,6 +118,7 @@ with st.sidebar:
             "504 ≈ 2 años de trading. Más grande = ajuste más estable "
             "pero menos ventanas totales para el mismo histórico."
         ),
+        key="wf_train_size",
     )
     test_size = st.slider(
         "Test size (barras)", 21, 500, 126, 21,
@@ -80,6 +128,7 @@ with st.sidebar:
             "verdad importa: mide cómo se comportaría en datos futuros "
             "reales, no vistos durante el ajuste. 126 ≈ 6 meses."
         ),
+        key="wf_test_size",
     )
     step = st.slider(
         "Step entre ventanas", 21, 250, test_size, 21,
@@ -89,12 +138,32 @@ with st.sidebar:
             "sin solapamiento, la configuración más limpia para no "
             "reutilizar los mismos días de test dos veces."
         ),
+        key="wf_step",
     )
 
     st.markdown("**Costes**")
-    initial_capital = st.number_input("Capital inicial (€)", 1_000, value=100_000, step=10_000)
-    commission = st.number_input("Comisión", 0.0, 0.05, 0.001, 0.0005, format="%.4f")
-    slippage = st.number_input("Slippage", 0.0, 0.05, 0.0005, 0.0005, format="%.4f")
+    initial_capital = st.number_input(
+        "Capital inicial (€)", 1_000, value=100_000, step=10_000, key="wf_capital",
+    )
+    commission = st.number_input(
+        "Comisión", 0.0, 0.05, 0.001, 0.0005, format="%.4f", key="wf_commission",
+    )
+    slippage = st.number_input(
+        "Slippage", 0.0, 0.05, 0.0005, 0.0005, format="%.4f", key="wf_slippage",
+    )
+
+    current_config = {
+        "strategy": strategy, "t1": t1, "t2": t2,
+        "train_size": train_size, "test_size": test_size, "step": step,
+        "initial_capital": initial_capital, "commission": commission,
+        "slippage": slippage,
+    }
+    st.download_button(
+        "💾 Guardar configuración actual (JSON)",
+        json.dumps(current_config, indent=2, ensure_ascii=False).encode("utf-8"),
+        file_name="walkforward_config.json",
+        mime="application/json",
+    )
 
     run = st.button("🚀 Ejecutar walk-forward", type="primary", use_container_width=True)
 

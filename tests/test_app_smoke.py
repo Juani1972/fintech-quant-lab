@@ -167,7 +167,7 @@ def test_estrategias_page_loads_and_switches_strategy():
     at.run()
     assert not at.exception
 
-    select = at.sidebar.selectbox(key=None)
+    select = at.sidebar.selectbox(key="es_strategy_name")
     for name in [
         "pca_statarb", "risk_parity", "cross_sectional_momentum",
         "carry_trade", "volatility_targeting", "trend_following",
@@ -360,6 +360,100 @@ def test_config_upload_roundtrip(page_path, valid_config, label, expected, stale
     at2 = AppTest.from_file(full_path, default_timeout=30)
     at2.session_state["global_tickers"] = "AAA, BBB"
     at2.run()
+    uploader2 = at2.get("file_uploader")[0]
+    uploader2.upload("mala.json", json.dumps(stale_config).encode("utf-8"), "application/json").run()
+    assert not at2.exception
+
+
+@pytest.mark.parametrize(
+    "page_path,valid_config,label,expected,stale_config",
+    [
+        (
+            "6_🔬_WalkForward.py",
+            {"strategy": "Momentum", "t1": "BBB", "train_size": 700, "test_size": 150},
+            "Estrategia", "Momentum",
+            {"strategy": "NO_EXISTE", "t1": "ZZZ_NO_EXISTE", "train_size": 99999},
+        ),
+        (
+            "7_🎯_Optimización.py",
+            {"strategy": "Mean Reversion", "t1": "BBB", "objective": "sortino"},
+            "Estrategia", "Mean Reversion",
+            {"strategy": "NO_EXISTE", "objective": "NO_EXISTE", "windows": [99999]},
+        ),
+        (
+            "8_🛡️_Robustez.py",
+            {"strategy": "Mean Reversion", "t1": "BBB", "n_sims": 2000},
+            "Estrategia", "Mean Reversion",
+            {"t1": "ZZZ_NO_EXISTE", "n_sims": 99999},
+        ),
+        (
+            "14_💼_Portfolio.py",
+            {"method": "Risk Parity (ERC)", "initial_capital": 50000},
+            "Método", "Risk Parity (ERC)",
+            {"method": "NO_EXISTE", "initial_capital": -5},
+        ),
+    ],
+)
+def test_config_upload_roundtrip_extended(page_path, valid_config, label, expected, stale_config):
+    """Misma regresión que test_config_upload_roundtrip, para las 4
+    páginas con parámetros condicionales según la estrategia/método
+    elegido (WalkForward, Optimización, Robustez, Portfolio)."""
+    import json
+
+    full_path = str(APP_DIR / "pages" / page_path)
+
+    at = AppTest.from_file(full_path, default_timeout=30)
+    at.session_state["global_tickers"] = "AAA, BBB, CCC"
+    at.run()
+    assert not at.exception
+
+    uploader = at.get("file_uploader")[0]
+    uploader.upload("config.json", json.dumps(valid_config).encode("utf-8"), "application/json").run()
+    assert not at.exception
+    sel = [s for s in at.sidebar.selectbox if s.label == label][0]
+    assert sel.value == expected
+
+    at2 = AppTest.from_file(full_path, default_timeout=30)
+    at2.session_state["global_tickers"] = "AAA, BBB, CCC"
+    at2.run()
+    uploader2 = at2.get("file_uploader")[0]
+    uploader2.upload("mala.json", json.dumps(stale_config).encode("utf-8"), "application/json").run()
+    assert not at2.exception
+
+
+def test_estrategias_page_config_upload_roundtrip():
+    """Regresión: Estrategias es la más compleja (6 estrategias, cada
+    una con su propio conjunto de parámetros, algunos con el mismo
+    nombre pero rangos distintos entre estrategias) -- confirma que
+    cargar una configuración válida selecciona la estrategia correcta,
+    y que una con la estrategia inexistente o un ticker obsoleto no
+    rompe la página."""
+    import json
+
+    at = AppTest.from_file(str(APP_DIR / "pages" / "15_🧭_Estrategias.py"), default_timeout=30)
+    at.session_state["global_tickers"] = "AAA, BBB, CCC"
+    at.run()
+    assert not at.exception
+
+    valid_config = {
+        "strategy_name": "volatility_targeting",
+        "params": {"target_vol": 0.25},
+        "single_ticker": "BBB",
+    }
+    uploader = at.get("file_uploader")[0]
+    uploader.upload("config.json", json.dumps(valid_config).encode("utf-8"), "application/json").run()
+    assert not at.exception
+    strategy_select = [s for s in at.sidebar.selectbox if s.key == "es_strategy_name"][0]
+    assert strategy_select.value == "volatility_targeting"
+
+    at2 = AppTest.from_file(str(APP_DIR / "pages" / "15_🧭_Estrategias.py"), default_timeout=30)
+    at2.session_state["global_tickers"] = "AAA, BBB, CCC"
+    at2.run()
+    stale_config = {
+        "strategy_name": "NO_EXISTE",
+        "params": {"target_vol": 99999},
+        "single_ticker": "ZZZ_NO_EXISTE",
+    }
     uploader2 = at2.get("file_uploader")[0]
     uploader2.upload("mala.json", json.dumps(stale_config).encode("utf-8"), "application/json").run()
     assert not at2.exception

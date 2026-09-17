@@ -1,4 +1,6 @@
 """Página de construcción de carteras (Markowitz, Risk Parity, HRP)."""
+import json
+
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -52,6 +54,54 @@ if len(tickers) < 2:
 with st.sidebar:
     st.markdown("---")
     st.markdown("## 💼 Configuración de cartera")
+
+    with st.expander("📂 Cargar / guardar configuración"):
+        st.caption("Guarda estos parámetros como JSON, o carga unos guardados antes.")
+        uploaded_config = st.file_uploader(
+            "Cargar configuración (JSON)", type="json", key="_pf_config_upload",
+        )
+        if uploaded_config is not None and st.session_state.get("_pf_config_applied") != uploaded_config.name:
+            try:
+                loaded_cfg = json.load(uploaded_config)
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                st.error(f"El archivo no es un JSON válido: {e}")
+            else:
+                skipped = []
+                method_opts = [
+                    "Hierarchical Risk Parity (HRP)", "Risk Parity (ERC)",
+                    "Markowitz (cartera tangente)", "Markowitz (retorno objetivo)",
+                ]
+                if loaded_cfg.get("method") in method_opts:
+                    st.session_state["pf_method"] = loaded_cfg["method"]
+                elif "method" in loaded_cfg:
+                    skipped.append("method")
+                rebalance_opts = ["Sin rebalanceo (buy & hold)", "Calendario", "Por desviación"]
+                if loaded_cfg.get("rebalance_mode") in rebalance_opts:
+                    st.session_state["pf_rebalance_mode"] = loaded_cfg["rebalance_mode"]
+                elif "rebalance_mode" in loaded_cfg:
+                    skipped.append("rebalance_mode")
+                if loaded_cfg.get("rebalance_freq") in ["M", "Q", "W"]:
+                    st.session_state["pf_rebalance_freq"] = loaded_cfg["rebalance_freq"]
+                elif "rebalance_freq" in loaded_cfg and loaded_cfg["rebalance_freq"] is not None:
+                    skipped.append("rebalance_freq")
+                for field, key, lo, hi in [
+                    ("target_return_pct", "pf_target_return", 1.0, 60.0),
+                    ("initial_capital", "pf_capital", 1000.0, None),
+                    ("rebalance_threshold", "pf_rebalance_threshold", 0.01, 0.30),
+                ]:
+                    val = loaded_cfg.get(field)
+                    if val is not None:
+                        if isinstance(val, (int, float)) and val >= lo and (hi is None or val <= hi):
+                            st.session_state[key] = val
+                        else:
+                            skipped.append(field)
+                st.session_state["_pf_config_applied"] = uploaded_config.name
+                if skipped:
+                    st.warning(f"Cargado, salvo: {', '.join(skipped)} (fuera de rango o no aplicable ahora).")
+                else:
+                    st.success("Configuración cargada.")
+                st.rerun()
+
     method = st.selectbox(
         "Método",
         [
@@ -66,13 +116,17 @@ with st.sidebar:
             "el mismo riesgo. Markowitz: óptimo media-varianza clásico (puede "
             "dar posiciones cortas, al no restringir pesos ≥ 0)."
         ),
+        key="pf_method",
     )
     target_return_pct = None
     if method == "Markowitz (retorno objetivo)":
-        target_return_pct = st.slider("Retorno anual objetivo (%)", 1.0, 60.0, 15.0, 0.5)
+        target_return_pct = st.slider(
+            "Retorno anual objetivo (%)", 1.0, 60.0, 15.0, 0.5, key="pf_target_return",
+        )
 
     initial_capital = st.number_input(
         "Capital inicial (€)", min_value=1000.0, value=100_000.0, step=1000.0,
+        key="pf_capital",
     )
 
     st.markdown("**Rebalanceo**")
@@ -85,15 +139,34 @@ with st.sidebar:
             "peso objetivo cada N periodos. Por desviación: se rebalancea "
             "solo cuando algún peso se aleja demasiado del objetivo."
         ),
+        key="pf_rebalance_mode",
     )
     rebalance_freq = None
     rebalance_threshold = None
     if rebalance_mode == "Calendario":
-        rebalance_freq = st.selectbox("Frecuencia", ["M", "Q", "W"], format_func=lambda f: {
-            "M": "Mensual", "Q": "Trimestral", "W": "Semanal",
-        }[f])
+        rebalance_freq = st.selectbox(
+            "Frecuencia", ["M", "Q", "W"], format_func=lambda f: {
+                "M": "Mensual", "Q": "Trimestral", "W": "Semanal",
+            }[f],
+            key="pf_rebalance_freq",
+        )
     elif rebalance_mode == "Por desviación":
-        rebalance_threshold = st.slider("Desviación máxima tolerada", 0.01, 0.30, 0.05, 0.01)
+        rebalance_threshold = st.slider(
+            "Desviación máxima tolerada", 0.01, 0.30, 0.05, 0.01,
+            key="pf_rebalance_threshold",
+        )
+
+    current_config = {
+        "method": method, "target_return_pct": target_return_pct,
+        "initial_capital": initial_capital, "rebalance_mode": rebalance_mode,
+        "rebalance_freq": rebalance_freq, "rebalance_threshold": rebalance_threshold,
+    }
+    st.download_button(
+        "💾 Guardar configuración actual (JSON)",
+        json.dumps(current_config, indent=2, ensure_ascii=False).encode("utf-8"),
+        file_name="portfolio_config.json",
+        mime="application/json",
+    )
 
     run_clicked = st.button("🚀 Calcular cartera", type="primary")
 
