@@ -20,6 +20,7 @@ from app.core.cointegration import (
     generate_signals as signals_pairs,
 )
 from app.core.data_loader import load_prices
+from app.core.experiments import ExperimentError, save_experiment
 from app.core.history import init_db, save_run
 from app.core.report import build_backtest_report
 from app.state import (
@@ -510,6 +511,52 @@ if run:
             )
         except Exception as e:
             callout(f"Error al guardar: {e}", variant="danger")
+
+    section("🧪 Guardar como experimento reproducible")
+    callout(
+        "Distinto del histórico de arriba: esto congela una copia exacta "
+        "de los datos usados (no solo las métricas) junto con el commit "
+        "de git actual, para poder reproducir este resultado exacto más "
+        "adelante aunque los datos de mercado cambien entre tanto.",
+        variant="info",
+    )
+    with st.form("save_experiment_form", clear_on_submit=True):
+        exp_notes = st.text_input(
+            "Descripción (opcional)", max_chars=200, key="exp_notes",
+            placeholder="Ej: Baseline antes de ajustar comisión",
+        )
+        exp_submitted = st.form_submit_button("🧪 Guardar experimento")
+
+    if exp_submitted:
+        try:
+            experiment = save_experiment(
+                config={
+                    "strategy": strategy,
+                    "tickers": tickers,
+                    "start_date": str(start),
+                    "end_date": str(end),
+                    "ticker_a": ticker_a,
+                    "ticker_b": ticker_b,
+                    "window": window,
+                    "entry": entry,
+                    "exit_": exit_,
+                    "initial_capital": initial_capital,
+                    "commission": commission,
+                    "slippage": slippage,
+                    "mode": bt_mode,
+                    "notes": exp_notes or None,
+                },
+                data=prices,
+                results=result.metrics,
+            )
+            callout(
+                f"✅ Experimento guardado con ID <strong>{experiment.id}</strong> "
+                f"(commit: {experiment.git_commit or 'sin repo git'}). "
+                f"Consúltalo en <strong>🧪 Experimentos</strong>.",
+                variant="success",
+            )
+        except ExperimentError as e:
+            callout(f"No se pudo guardar el experimento: {e}", variant="danger")
 
 else:
     callout(

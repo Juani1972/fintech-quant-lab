@@ -127,4 +127,17 @@ PAGES = [
         "description": "Envía órdenes en papel (sin capital real) contra la cuenta "
                        "de simulación de Alpaca.",
     },
+    {
+        "icon": "🧪",
+        "name": "Experimentos",
+        "description": "Congela config, datos y resultados de un backtest para "
+                       "reproducirlo exactamente más adelante, con el commit "
+                       "de git asociado.",
+    },
+    {
+        "icon": "🔑",
+        "name": "Licencia",
+        "description": "Verificación de licencia con caché offline y huella de "
+                       "máquina -- pendiente de un servidor de licencias real.",
+    },
 ]

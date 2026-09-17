@@ -200,3 +200,19 @@ def test_riesgo_page_loads_with_filtered_var():
     at.session_state["global_tickers"] = "AAA"
     at.run()
     assert not at.exception
+
+
+def test_experimentos_page_empty_state():
+    """Página de Experimentos sin ningún experimento guardado todavía:
+    debe mostrar el aviso informativo, no una excepción."""
+    at = AppTest.from_file(str(APP_DIR / "pages" / "17_🧪_Experimentos.py"), default_timeout=30)
+    at.run()
+    assert not at.exception
+
+
+def test_licencia_page_loads_without_exception():
+    """Página de Licencia sin ninguna clave guardada: debe cargar y
+    mostrar la huella de máquina sin excepción."""
+    at = AppTest.from_file(str(APP_DIR / "pages" / "18_🔑_Licencia.py"), default_timeout=30)
+    at.run()
+    assert not at.exception
