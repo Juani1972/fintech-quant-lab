@@ -1,4 +1,5 @@
 """Página de cointegración y pairs trading con corrección por múltiples tests."""
+import json
 from itertools import combinations
 
 import pandas as pd
@@ -19,7 +20,7 @@ from app.state import (
     get_global_provider,
     get_global_provider_kwargs,
 )
-from app.styles import callout, footer, hero, page_setup, section
+from app.styles import callout, data_preview, footer, hero, page_setup, section
 
 page_setup("Cointegración", "🔗")
 
@@ -47,11 +48,77 @@ if len(tickers) < 2:
 with st.sidebar:
     st.markdown("---")
     st.markdown("## 🎛️ Parámetros Pairs Trading")
+
+    with st.expander("📂 Cargar / guardar configuración"):
+        st.caption("Guarda estos parámetros como JSON, o carga unos guardados antes.")
+        uploaded_config = st.file_uploader(
+            "Cargar configuración (JSON)", type="json", key="_coint_config_upload",
+        )
+        if uploaded_config is not None and st.session_state.get("_coint_config_applied") != uploaded_config.name:
+            try:
+                loaded_cfg = json.load(uploaded_config)
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                st.error(f"El archivo no es un JSON válido: {e}")
+            else:
+                skipped = []
+                for field, key in [("t1", "coint_t1"), ("t2", "coint_t2")]:
+                    val = loaded_cfg.get(field)
+                    if val is not None:
+                        if val in tickers:
+                            st.session_state[key] = val
+                        else:
+                            skipped.append(f"{field} ('{val}' no está en tus tickers actuales)")
+                for field, key, lo, hi in [
+                    ("window", "coint_window", 20, 200),
+                    ("entry", "coint_entry", 0.5, 3.0),
+                ]:
+                    val = loaded_cfg.get(field)
+                    if val is not None:
+                        if isinstance(val, (int, float)) and lo <= val <= hi:
+                            st.session_state[key] = val
+                        else:
+                            skipped.append(field)
+                st.session_state["_coint_config_applied"] = uploaded_config.name
+                if skipped:
+                    st.warning(f"Cargado, salvo: {', '.join(skipped)} (fuera de rango o no aplicable ahora).")
+                else:
+                    st.success("Configuración cargada.")
+                st.rerun()
+
     col1, col2 = st.columns(2)
-    t1 = col1.selectbox("Ticker 1", tickers, index=0)
-    t2 = col2.selectbox("Ticker 2", tickers, index=1)
-    window = st.slider("Ventana Z-score", 20, 200, 60)
-    entry = st.slider("Umbral de entrada", 0.5, 3.0, 2.0, 0.1)
+    t1 = col1.selectbox("Ticker 1", tickers, index=0, key="coint_t1")
+    t2 = col2.selectbox("Ticker 2", tickers, index=1, key="coint_t2")
+    window = st.slider(
+        "Ventana Z-score", 20, 200, 60,
+        help=(
+            "Nº de días usados para calcular la media y desviación típica "
+            "móviles del spread, sobre las que se mide el z-score. Una "
+            "ventana corta reacciona más rápido a cambios de régimen pero "
+            "da señales más ruidosas; una larga suaviza pero reacciona "
+            "más lento."
+        ),
+        key="coint_window",
+    )
+    entry = st.slider(
+        "Umbral de entrada", 0.5, 3.0, 2.0, 0.1,
+        help=(
+            "Z-score (nº de desviaciones típicas respecto a la media móvil "
+            "del spread) a partir del cual se genera una señal de entrada. "
+            "2.0 es un valor habitual: el spread se considera "
+            "'suficientemente alejado' de su media como para apostar a "
+            "que revierte."
+        ),
+        key="coint_entry",
+    )
+
+    current_config = {"t1": t1, "t2": t2, "window": window, "entry": entry}
+    st.download_button(
+        "💾 Guardar configuración actual (JSON)",
+        json.dumps(current_config, indent=2, ensure_ascii=False).encode("utf-8"),
+        file_name="cointegracion_config.json",
+        mime="application/json",
+    )
+
     run = st.button("🚀 Ejecutar análisis", type="primary", use_container_width=True)
 
 
@@ -62,6 +129,7 @@ if run:
         except (ValueError, ConnectionError) as e:
             callout(f"Error al cargar datos: {e}", variant="danger")
             st.stop()
+        data_preview(prices)
 
     # --- Multiple testing sobre todos los pares ---
     if len(tickers) > 2:
@@ -157,8 +225,19 @@ if run:
 
     hl = half_life(result.spread)
     if hl != float("inf"):
-        callout(f"⏱️ Half-life de reversión: <strong>{hl:.1f} días</strong>",
-                variant="info")
+        st.metric(
+            "⏱️ Half-life de reversión", f"{hl:.1f} días",
+            help=(
+                "Tiempo medio estimado que tarda el spread en recorrer la "
+                "mitad de la distancia hasta su media histórica tras "
+                "desviarse -- se calcula ajustando un proceso AR(1) al "
+                "spread (Ornstein-Uhlenbeck discreto). Un half-life corto "
+                "(pocos días) indica reversión rápida, más aprovechable "
+                "para pairs trading; uno muy largo indica que, aunque el "
+                "par esté cointegrado, revertir a la media puede tardar "
+                "demasiado para ser operable."
+            ),
+        )
     else:
         callout("Half-life no definida (el spread no revierte a la media).",
                 variant="warning")

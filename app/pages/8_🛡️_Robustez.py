@@ -25,7 +25,7 @@ from app.state import (
     get_global_provider,
     get_global_provider_kwargs,
 )
-from app.styles import callout, footer, hero, page_setup, section
+from app.styles import callout, data_preview, footer, hero, page_setup, section
 
 page_setup("Robustez", "🛡️")
 
@@ -77,8 +77,25 @@ with st.sidebar:
     test_size = st.slider("Test", 21, 250, 126, 21)
 
     st.markdown("**Monte Carlo**")
-    n_sims = st.slider("Nº simulaciones", 200, 5000, 1000, 100)
-    block_size = st.slider("Block size", 1, 20, 1, 1)
+    n_sims = st.slider(
+        "Nº simulaciones", 200, 5000, 1000, 100,
+        help=(
+            "Nº de escenarios sintéticos a generar barajando/rebloqueando "
+            "los retornos históricos. Más simulaciones = estimación más "
+            "estable del rango de resultados posibles, pero más lento."
+        ),
+    )
+    block_size = st.slider(
+        "Block size", 1, 20, 1, 1,
+        help=(
+            "block_size=1: bootstrap clásico (cada día se baraja "
+            "independientemente, rompe cualquier autocorrelación). "
+            "block_size>1: block bootstrap -- se barajan bloques de N "
+            "días consecutivos, preservando parte de la dependencia "
+            "temporal (clustering de volatilidad) que un bootstrap "
+            "clásico destruiría."
+        ),
+    )
 
     run = st.button("🚀 Analizar robustez", type="primary", use_container_width=True)
 
@@ -90,6 +107,7 @@ if run:
         except (ValueError, ConnectionError) as e:
             callout(f"Error al cargar datos: {e}", variant="danger")
             st.stop()
+        data_preview(prices)
 
     # --- Preparar serie, factorías y modo ---
     if strategy == "Pairs Trading (spread)":

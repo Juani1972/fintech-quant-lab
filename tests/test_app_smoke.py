@@ -210,9 +210,156 @@ def test_experimentos_page_empty_state():
     assert not at.exception
 
 
+def test_backtest_page_config_upload_applies_valid_values():
+    """Regresión: subir un JSON de configuración válido en Backtest debe
+    actualizar los widgets del sidebar (estrategia, ventana, capital)
+    con los valores del archivo, sin excepción."""
+    import json
+
+    config = {
+        "strategy": "Mean Reversion", "ticker_a": "AAA", "ticker_b": None,
+        "window": 45, "entry": 1.8, "exit_": 0.4,
+        "initial_capital": 75000, "commission": 0.0015, "slippage": 0.0008,
+    }
+    content = json.dumps(config).encode("utf-8")
+
+    at = AppTest.from_file(str(APP_DIR / "pages" / "5_🧪_Backtest.py"), default_timeout=30)
+    at.session_state["global_tickers"] = "AAA, BBB"
+    at.run()
+    assert not at.exception
+
+    uploader = at.get("file_uploader")[0]
+    uploader.upload("config.json", content, "application/json").run()
+    assert not at.exception
+
+    strategy_select = [s for s in at.sidebar.selectbox if s.label == "Estrategia"][0]
+    assert strategy_select.value == "Mean Reversion"
+    capital_input = [n for n in at.sidebar.number_input if "Capital" in (n.label or "")][0]
+    assert capital_input.value == 75000
+
+
+def test_backtest_page_config_upload_skips_stale_ticker_and_out_of_range():
+    """Regresión: un JSON de configuración con un ticker que ya no está
+    en la lista actual, o un valor fuera del rango del slider, no debe
+    romper la app -- se ignora ese campo concreto (con aviso), en vez
+    de provocar un StreamlitAPIException al intentar fijar un
+    selectbox/slider a un valor inválido."""
+    import json
+
+    stale_config = {"strategy": "Momentum", "ticker_a": "ZZZ_NO_EXISTE", "window": 9999}
+    content = json.dumps(stale_config).encode("utf-8")
+
+    at = AppTest.from_file(str(APP_DIR / "pages" / "5_🧪_Backtest.py"), default_timeout=30)
+    at.session_state["global_tickers"] = "AAA, BBB"
+    at.run()
+
+    uploader = at.get("file_uploader")[0]
+    uploader.upload("config_vieja.json", content, "application/json").run()
+    assert not at.exception
+
+
 def test_licencia_page_loads_without_exception():
     """Página de Licencia sin ninguna clave guardada: debe cargar y
     mostrar la huella de máquina sin excepción."""
     at = AppTest.from_file(str(APP_DIR / "pages" / "18_🔑_Licencia.py"), default_timeout=30)
     at.run()
     assert not at.exception
+
+
+def test_garch_page_config_upload_applies_valid_values():
+    """Regresión: subir un JSON de configuración válido en GARCH debe
+    actualizar ticker/p/q/vol/dist en el sidebar sin excepción."""
+    import json
+
+    config = {"ticker": "BBB", "p": 2, "q": 2, "vol": "EGARCH", "dist": "t"}
+    content = json.dumps(config).encode("utf-8")
+
+    at = AppTest.from_file(str(APP_DIR / "pages" / "1_📈_GARCH.py"), default_timeout=30)
+    at.session_state["global_tickers"] = "AAA, BBB"
+    at.run()
+    assert not at.exception
+
+    uploader = at.get("file_uploader")[0]
+    uploader.upload("config.json", content, "application/json").run()
+    assert not at.exception
+
+    ticker_select = [s for s in at.sidebar.selectbox if s.label == "Ticker a modelar"][0]
+    vol_select = [s for s in at.sidebar.selectbox if s.label == "Tipo de modelo"][0]
+    assert ticker_select.value == "BBB"
+    assert vol_select.value == "EGARCH"
+
+
+def test_garch_page_config_upload_skips_invalid_option():
+    """Regresión: un JSON con una opción que no existe en el selectbox
+    (p.ej. un tipo de modelo GARCH inválido) no debe romper la app."""
+    import json
+
+    bad_config = {"vol": "NO_EXISTE", "p": 99}
+    content = json.dumps(bad_config).encode("utf-8")
+
+    at = AppTest.from_file(str(APP_DIR / "pages" / "1_📈_GARCH.py"), default_timeout=30)
+    at.session_state["global_tickers"] = "AAA, BBB"
+    at.run()
+
+    uploader = at.get("file_uploader")[0]
+    uploader.upload("mala.json", content, "application/json").run()
+    assert not at.exception
+
+
+@pytest.mark.parametrize(
+    "page_path,valid_config,label,expected,stale_config",
+    [
+        (
+            "2_🔗_Cointegración.py",
+            {"t1": "BBB", "t2": "AAA", "window": 80, "entry": 2.5},
+            "Ticker 1", "BBB",
+            {"t1": "ZZZ_NO_EXISTE", "window": 99999},
+        ),
+        (
+            "4_⚠️_Riesgo.py",
+            {"ticker": "BBB", "confidence": 0.97, "window": 300},
+            "Ticker", "BBB",
+            {"ticker": "ZZZ_NO_EXISTE", "confidence": 5.0},
+        ),
+        (
+            "11_📉_Regímenes.py",
+            {"ticker": "BBB", "n_states": 3, "cov_type": "full", "n_iter": 500},
+            "Ticker", "BBB",
+            {"ticker": "ZZZ_NO_EXISTE", "cov_type": "NO_EXISTE"},
+        ),
+        (
+            "12_🎛️_Kalman.py",
+            {"t1": "BBB", "t2": "AAA", "delta": 0.001, "r_var": 0.005, "roll_window": 100},
+            "Ticker Y (dependiente)", "BBB",
+            {"t1": "ZZZ_NO_EXISTE", "delta": 99},
+        ),
+    ],
+)
+def test_config_upload_roundtrip(page_path, valid_config, label, expected, stale_config):
+    """Regresión parametrizada: en cada una de estas 4 páginas, subir un
+    JSON de configuración válido actualiza el widget correspondiente, y
+    subir uno con un ticker obsoleto / valor fuera de rango no rompe
+    la app (se ignora ese campo con aviso, en vez de un
+    StreamlitAPIException al fijar un selectbox/slider a un valor
+    inválido)."""
+    import json
+
+    full_path = str(APP_DIR / "pages" / page_path)
+
+    at = AppTest.from_file(full_path, default_timeout=30)
+    at.session_state["global_tickers"] = "AAA, BBB"
+    at.run()
+    assert not at.exception
+
+    uploader = at.get("file_uploader")[0]
+    uploader.upload("config.json", json.dumps(valid_config).encode("utf-8"), "application/json").run()
+    assert not at.exception
+    sel = [s for s in at.sidebar.selectbox if s.label == label][0]
+    assert sel.value == expected
+
+    at2 = AppTest.from_file(full_path, default_timeout=30)
+    at2.session_state["global_tickers"] = "AAA, BBB"
+    at2.run()
+    uploader2 = at2.get("file_uploader")[0]
+    uploader2.upload("mala.json", json.dumps(stale_config).encode("utf-8"), "application/json").run()
+    assert not at2.exception

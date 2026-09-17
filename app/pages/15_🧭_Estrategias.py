@@ -12,7 +12,7 @@ from app.state import (
     get_global_provider,
     get_global_provider_kwargs,
 )
-from app.styles import callout, footer, hero, page_setup, section
+from app.styles import callout, data_preview, footer, hero, page_setup, section
 
 page_setup("Estrategias", "🧭")
 
@@ -73,25 +73,54 @@ with st.sidebar:
 
     params: dict = {}
     if strategy_name == "trend_following":
-        params["fast_window"] = st.slider("Ventana rápida", 5, 60, 20)
+        params["fast_window"] = st.slider(
+            "Ventana rápida", 5, 60, 20,
+            help="Media móvil corta. Cruza por encima de la lenta = señal larga; por debajo = corta.",
+        )
         params["slow_window"] = st.slider("Ventana lenta", 20, 250, 100)
     elif strategy_name == "volatility_targeting":
-        params["target_vol"] = st.slider("Vol. objetivo (anual)", 0.05, 0.60, 0.15, 0.01)
+        params["target_vol"] = st.slider(
+            "Vol. objetivo (anual)", 0.05, 0.60, 0.15, 0.01,
+            help=(
+                "Volatilidad anualizada que se busca mantener en la "
+                "cartera. La estrategia sube el apalancamiento cuando la "
+                "volatilidad realizada está por debajo de este objetivo, "
+                "y lo baja cuando está por encima."
+            ),
+        )
         params["lookback"] = st.slider("Ventana de vol. realizada", 5, 120, 20)
-        params["max_leverage"] = st.slider("Apalancamiento máximo", 1.0, 5.0, 3.0, 0.5)
+        params["max_leverage"] = st.slider(
+            "Apalancamiento máximo", 1.0, 5.0, 3.0, 0.5,
+            help="Límite superior al apalancamiento, aunque el objetivo de volatilidad pida más.",
+        )
         single_ticker = st.selectbox("Ticker (activo único)", tickers)
     elif strategy_name == "pca_statarb":
-        params["lookback"] = st.slider("Ventana", 10, 250, 60)
+        params["lookback"] = st.slider(
+            "Ventana", 10, 250, 60,
+            help="Días usados para estimar los componentes principales y la media/desviación del spread resultante.",
+        )
         params["entry_z"] = st.slider("Z-score entrada", 0.5, 4.0, 2.0, 0.1)
         params["exit_z"] = st.slider("Z-score salida", 0.0, 2.0, 0.5, 0.1)
     elif strategy_name == "risk_parity":
-        params["lookback"] = st.slider("Ventana de volatilidad", 5, 250, 60)
+        params["lookback"] = st.slider(
+            "Ventana de volatilidad", 5, 250, 60,
+            help="Días usados para estimar la volatilidad de cada activo -- pesos inversamente proporcionales a ella.",
+        )
     elif strategy_name == "cross_sectional_momentum":
-        params["lookback"] = st.slider("Ventana de momentum", 20, 400, 252)
+        params["lookback"] = st.slider(
+            "Ventana de momentum", 20, 400, 252,
+            help="Días de retorno pasado usados para rankear los activos entre sí (252 ≈ 1 año).",
+        )
         top_n_enabled = st.checkbox("Limitar a top/bottom N", value=False)
-        params["top_n"] = st.slider("N", 1, 10, 3) if top_n_enabled else None
+        params["top_n"] = st.slider(
+            "N", 1, 10, 3,
+            help="Solo los N activos con mejor y peor momentum entran en la cartera; el resto queda a peso 0.",
+        ) if top_n_enabled else None
     elif strategy_name == "carry_trade":
-        params["deadband"] = st.slider("Banda muerta", 0.0, 0.05, 0.0, 0.005)
+        params["deadband"] = st.slider(
+            "Banda muerta", 0.0, 0.05, 0.0, 0.005,
+            help="Diferencial de carry mínimo para generar señal -- por debajo de esto, se considera ruido y no se opera.",
+        )
 
     run_clicked = st.button("🚀 Generar señales", type="primary")
 
@@ -126,6 +155,7 @@ try:
 except (ValueError, ConnectionError) as e:
     callout(f"Error al cargar datos: {e}", variant="danger")
     st.stop()
+data_preview(prices)
 
 price_input = prices[[single_ticker]] if strategy_name == "volatility_targeting" else prices
 

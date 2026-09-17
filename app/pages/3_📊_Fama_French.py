@@ -9,7 +9,7 @@ from app.state import (
     get_global_provider,
     get_global_provider_kwargs,
 )
-from app.styles import callout, footer, hero, page_setup, section
+from app.styles import callout, data_preview, footer, hero, page_setup, section
 
 page_setup("Fama-French", "📊")
 
@@ -56,6 +56,7 @@ if run:
         except (ValueError, ConnectionError) as e:
             callout(f"Error al cargar datos: {e}", variant="danger")
             st.stop()
+        data_preview(prices)
 
     returns = compute_log_returns(prices)[ticker]
 

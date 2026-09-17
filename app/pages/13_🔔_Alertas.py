@@ -156,6 +156,11 @@ with col2:
     rule_severity = st.selectbox(
         "Severidad",
         [s.value for s in AlertSeverity],
+        help=(
+            "Solo afecta al color/icono con el que se muestra la alerta "
+            "(info=azul, success=verde, warning=ámbar, danger=rojo) -- "
+            "no cambia si se dispara o no, solo su urgencia visual."
+        ),
     )
 
 if st.button("🔍 Evaluar y enviar si se cumple"):

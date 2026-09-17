@@ -21,7 +21,7 @@ from app.state import (
     get_global_provider,
     get_global_provider_kwargs,
 )
-from app.styles import callout, footer, hero, kpi_row, page_setup, section
+from app.styles import callout, data_preview, footer, hero, kpi_row, page_setup, section
 
 page_setup("Portfolio", "💼")
 
@@ -109,6 +109,7 @@ try:
 except (ValueError, ConnectionError) as e:
     callout(f"Error al cargar datos: {e}", variant="danger")
     st.stop()
+data_preview(prices)
 
 returns = compute_log_returns(prices)
 

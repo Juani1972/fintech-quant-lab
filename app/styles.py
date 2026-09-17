@@ -14,7 +14,10 @@ Uso:
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import cast
 
+import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
 from app.config import THEME
@@ -311,6 +314,51 @@ def page_card(icon: str, title: str, description: str) -> None:
         """,
         unsafe_allow_html=True,
     )
+
+
+def data_preview(prices: pd.DataFrame) -> None:
+    """Vista previa de los datos cargados, antes de ejecutar cualquier
+    análisis: gráfico rápido de todas las series, estadísticas
+    descriptivas y un informe de calidad (huecos, duplicados, retornos
+    extremos). Pensado para que el usuario confirme de un vistazo que
+    los datos son los que esperaba antes de lanzar un cálculo largo.
+
+    Colapsado por defecto (dentro de un expander) para no ocupar
+    espacio en pantallas donde el usuario ya sabe lo que está haciendo.
+    """
+    from app.core.data_loader import data_quality_report
+
+    with st.expander("👁️ Vista previa de los datos cargados", expanded=False):
+        report = data_quality_report(prices)
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Filas", cast(int, report["rows"]))
+        c2.metric("Columnas", cast(int, report["columns"]))
+        c3.metric("Rango", f"{report['start']} → {report['end']}")
+        c4.metric("Huecos rellenados", cast(int, report["missing"]))
+
+        if report["duplicate_dates"]:
+            st.warning(f"⚠️ {report['duplicate_dates']} fecha(s) duplicada(s) en el índice.")
+        if report["extreme_returns"]:
+            st.warning(
+                f"⚠️ {report['extreme_returns']} retorno(s) diario(s) "
+                "a más de 5 desviaciones típicas de la media -- revisa "
+                "si son splits/dividendos mal ajustados o datos erróneos."
+            )
+
+        fig = go.Figure()
+        for col in prices.columns:
+            fig.add_trace(go.Scatter(
+                x=prices.index, y=prices[col], mode="lines", name=str(col),
+            ))
+        fig.update_layout(
+            title="Precios cargados", template="plotly_white", height=320,
+            margin={"l": 40, "r": 20, "t": 40, "b": 30},
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.caption("Estadísticas descriptivas:")
+        st.dataframe(prices.describe().T, use_container_width=True)
 
 
 def footer() -> None:

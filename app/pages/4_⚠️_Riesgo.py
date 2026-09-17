@@ -1,4 +1,6 @@
 """Página de métricas de riesgo."""
+import json
+
 import streamlit as st
 
 from app.core.data_loader import compute_log_returns, load_prices
@@ -24,7 +26,7 @@ from app.state import (
     get_global_provider,
     get_global_provider_kwargs,
 )
-from app.styles import callout, footer, hero, page_setup, section
+from app.styles import callout, data_preview, footer, hero, page_setup, section
 
 page_setup("Riesgo", "⚠️")
 
@@ -49,9 +51,54 @@ if not tickers:
 with st.sidebar:
     st.markdown("---")
     st.markdown("## 🎛️ Parámetros de riesgo")
-    ticker = st.selectbox("Ticker", tickers)
-    confidence = st.slider("Nivel de confianza", 0.90, 0.99, 0.95, 0.01)
-    window = st.slider("Ventana VaR rodante", 50, 500, 250)
+
+    with st.expander("📂 Cargar / guardar configuración"):
+        st.caption("Guarda estos parámetros como JSON, o carga unos guardados antes.")
+        uploaded_config = st.file_uploader(
+            "Cargar configuración (JSON)", type="json", key="_riesgo_config_upload",
+        )
+        if uploaded_config is not None and st.session_state.get("_riesgo_config_applied") != uploaded_config.name:
+            try:
+                loaded_cfg = json.load(uploaded_config)
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                st.error(f"El archivo no es un JSON válido: {e}")
+            else:
+                skipped = []
+                ticker_val = loaded_cfg.get("ticker")
+                if ticker_val is not None:
+                    if ticker_val in tickers:
+                        st.session_state["riesgo_ticker"] = ticker_val
+                    else:
+                        skipped.append(f"ticker ('{ticker_val}' no está en tus tickers actuales)")
+                for field, key, lo, hi in [
+                    ("confidence", "riesgo_confidence", 0.90, 0.99),
+                    ("window", "riesgo_window", 50, 500),
+                ]:
+                    val = loaded_cfg.get(field)
+                    if val is not None:
+                        if isinstance(val, (int, float)) and lo <= val <= hi:
+                            st.session_state[key] = val
+                        else:
+                            skipped.append(field)
+                st.session_state["_riesgo_config_applied"] = uploaded_config.name
+                if skipped:
+                    st.warning(f"Cargado, salvo: {', '.join(skipped)} (fuera de rango o no aplicable ahora).")
+                else:
+                    st.success("Configuración cargada.")
+                st.rerun()
+
+    ticker = st.selectbox("Ticker", tickers, key="riesgo_ticker")
+    confidence = st.slider("Nivel de confianza", 0.90, 0.99, 0.95, 0.01, key="riesgo_confidence")
+    window = st.slider("Ventana VaR rodante", 50, 500, 250, key="riesgo_window")
+
+    current_config = {"ticker": ticker, "confidence": confidence, "window": window}
+    st.download_button(
+        "💾 Guardar configuración actual (JSON)",
+        json.dumps(current_config, indent=2, ensure_ascii=False).encode("utf-8"),
+        file_name="riesgo_config.json",
+        mime="application/json",
+    )
+
     run = st.button("🚀 Calcular riesgo", type="primary", use_container_width=True)
 
 
@@ -62,6 +109,7 @@ if run:
         except (ValueError, ConnectionError) as e:
             callout(f"Error al cargar datos: {e}", variant="danger")
             st.stop()
+        data_preview(prices)
 
     returns = compute_log_returns(prices)[ticker]
 

@@ -1,4 +1,6 @@
 """Página de hedge ratio dinámico con Kalman filter."""
+import json
+
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -15,7 +17,7 @@ from app.state import (
     get_global_provider,
     get_global_provider_kwargs,
 )
-from app.styles import callout, footer, hero, page_setup, section
+from app.styles import callout, data_preview, footer, hero, page_setup, section
 
 page_setup("Kalman", "🎛️")
 
@@ -41,18 +43,71 @@ if len(tickers) < 2:
 with st.sidebar:
     st.markdown("---")
     st.markdown("## 🎛️ Parámetros Kalman")
-    t1 = st.selectbox("Ticker Y (dependiente)", tickers, index=0)
-    t2 = st.selectbox("Ticker X (independiente)", tickers, index=1)
+
+    with st.expander("📂 Cargar / guardar configuración"):
+        st.caption("Guarda estos parámetros como JSON, o carga unos guardados antes.")
+        uploaded_config = st.file_uploader(
+            "Cargar configuración (JSON)", type="json", key="_kalman_config_upload",
+        )
+        if uploaded_config is not None and st.session_state.get("_kalman_config_applied") != uploaded_config.name:
+            try:
+                loaded_cfg = json.load(uploaded_config)
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                st.error(f"El archivo no es un JSON válido: {e}")
+            else:
+                skipped = []
+                for field, key in [("t1", "kalman_t1"), ("t2", "kalman_t2")]:
+                    val = loaded_cfg.get(field)
+                    if val is not None:
+                        if val in tickers:
+                            st.session_state[key] = val
+                        else:
+                            skipped.append(f"{field} ('{val}' no está en tus tickers actuales)")
+                for field, key, lo, hi in [
+                    ("delta", "kalman_delta", 1e-5, 1e-2),
+                    ("r_var", "kalman_r_var", 1e-5, 1e-2),
+                    ("roll_window", "kalman_roll_window", 20, 200),
+                ]:
+                    val = loaded_cfg.get(field)
+                    if val is not None:
+                        if isinstance(val, (int, float)) and lo <= val <= hi:
+                            st.session_state[key] = val
+                        else:
+                            skipped.append(field)
+                st.session_state["_kalman_config_applied"] = uploaded_config.name
+                if skipped:
+                    st.warning(f"Cargado, salvo: {', '.join(skipped)} (fuera de rango o no aplicable ahora).")
+                else:
+                    st.success("Configuración cargada.")
+                st.rerun()
+
+    t1 = st.selectbox("Ticker Y (dependiente)", tickers, index=0, key="kalman_t1")
+    t2 = st.selectbox("Ticker X (independiente)", tickers, index=1, key="kalman_t2")
     delta = st.slider(
         "Delta (reactividad)", 1e-5, 1e-2, 1e-4, 1e-5,
         format="%.5f",
         help="Valores más altos → beta más reactivo a cambios recientes.",
+        key="kalman_delta",
     )
     r_var = st.slider(
         "R (varianza observación)", 1e-5, 1e-2, 1e-3, 1e-4,
         format="%.4f",
+        key="kalman_r_var",
     )
-    roll_window = st.slider("Ventana OLS rodante (comparación)", 20, 200, 60)
+    roll_window = st.slider(
+        "Ventana OLS rodante (comparación)", 20, 200, 60, key="kalman_roll_window",
+    )
+
+    current_config = {
+        "t1": t1, "t2": t2, "delta": delta, "r_var": r_var, "roll_window": roll_window,
+    }
+    st.download_button(
+        "💾 Guardar configuración actual (JSON)",
+        json.dumps(current_config, indent=2, ensure_ascii=False).encode("utf-8"),
+        file_name="kalman_config.json",
+        mime="application/json",
+    )
+
     run = st.button("🚀 Calcular", type="primary", use_container_width=True)
 
 
@@ -63,6 +118,7 @@ if run:
         except (ValueError, ConnectionError) as e:
             callout(f"Error al cargar datos: {e}", variant="danger")
             st.stop()
+        data_preview(prices)
 
     y = prices[t1]
     x = prices[t2]

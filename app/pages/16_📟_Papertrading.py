@@ -113,7 +113,15 @@ with st.form("submit_order_form"):
     with col3:
         side = st.selectbox("Sentido", ["buy", "sell"])
 
-    order_type = st.selectbox("Tipo de orden", ["market", "limit"])
+    order_type = st.selectbox(
+        "Tipo de orden", ["market", "limit"],
+        help=(
+            "market: se ejecuta ya, al mejor precio disponible en ese "
+            "momento. limit: solo se ejecuta si el precio alcanza el "
+            "límite que indiques (o mejor), pudiendo no llegar a "
+            "ejecutarse nunca."
+        ),
+    )
     limit_price = None
     if order_type == "limit":
         limit_price = st.number_input("Precio límite", min_value=0.01, value=100.0, step=0.01)

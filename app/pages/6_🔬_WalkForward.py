@@ -21,7 +21,7 @@ from app.state import (
     get_global_provider,
     get_global_provider_kwargs,
 )
-from app.styles import callout, footer, hero, page_setup, section
+from app.styles import callout, data_preview, footer, hero, page_setup, section
 
 page_setup("Walk-Forward", "🔬")
 
@@ -63,9 +63,33 @@ with st.sidebar:
         t1 = st.selectbox("Ticker", tickers, index=0)
         t2 = None
 
-    train_size = st.slider("Train size (barras)", 100, 1000, 504, 21)
-    test_size = st.slider("Test size (barras)", 21, 500, 126, 21)
-    step = st.slider("Step entre ventanas", 21, 250, test_size, 21)
+    train_size = st.slider(
+        "Train size (barras)", 100, 1000, 504, 21,
+        help=(
+            "Nº de días usados para AJUSTAR/optimizar la estrategia en "
+            "cada ventana, antes de evaluarla en datos que no ha visto. "
+            "504 ≈ 2 años de trading. Más grande = ajuste más estable "
+            "pero menos ventanas totales para el mismo histórico."
+        ),
+    )
+    test_size = st.slider(
+        "Test size (barras)", 21, 500, 126, 21,
+        help=(
+            "Nº de días usados para EVALUAR la estrategia tras cada "
+            "ajuste -- esta es la parte 'out-of-sample' (OOS) que de "
+            "verdad importa: mide cómo se comportaría en datos futuros "
+            "reales, no vistos durante el ajuste. 126 ≈ 6 meses."
+        ),
+    )
+    step = st.slider(
+        "Step entre ventanas", 21, 250, test_size, 21,
+        help=(
+            "Cuánto avanza la ventana de train/test entre una iteración "
+            "y la siguiente. Step = test_size (por defecto) da ventanas "
+            "sin solapamiento, la configuración más limpia para no "
+            "reutilizar los mismos días de test dos veces."
+        ),
+    )
 
     st.markdown("**Costes**")
     initial_capital = st.number_input("Capital inicial (€)", 1_000, value=100_000, step=10_000)
@@ -82,6 +106,7 @@ if run:
         except (ValueError, ConnectionError) as e:
             callout(f"Error al cargar datos: {e}", variant="danger")
             st.stop()
+        data_preview(prices)
 
     if strategy == "Pairs Trading (spread)":
         try:

@@ -1,4 +1,6 @@
 """Página de backtesting de estrategias cuantitativas."""
+import json
+
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -29,7 +31,7 @@ from app.state import (
     get_global_provider,
     get_global_provider_kwargs,
 )
-from app.styles import callout, footer, hero, page_setup, section
+from app.styles import callout, data_preview, footer, hero, page_setup, section
 
 page_setup("Backtest", "🧪")
 
@@ -193,9 +195,60 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("## 🧪 Configuración del backtest")
 
+    with st.expander("📂 Cargar / guardar configuración"):
+        st.caption(
+            "Guarda los parámetros actuales como JSON para reutilizarlos "
+            "luego, o carga un JSON guardado antes -- no incluye datos ni "
+            "resultados, solo los valores de los controles de abajo."
+        )
+        uploaded_config = st.file_uploader(
+            "Cargar configuración (JSON)", type="json", key="_bt_config_upload",
+        )
+        if uploaded_config is not None and st.session_state.get("_bt_config_applied") != uploaded_config.name:
+            try:
+                loaded_cfg = json.load(uploaded_config)
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                st.error(f"El archivo no es un JSON válido: {e}")
+            else:
+                skipped = []
+                if loaded_cfg.get("strategy") in ["Pairs Trading", "Momentum", "Mean Reversion"]:
+                    st.session_state["bt_strategy"] = loaded_cfg["strategy"]
+                elif "strategy" in loaded_cfg:
+                    skipped.append("strategy")
+                for field, key in [
+                    ("ticker_a", "bt_ticker_a"), ("ticker_b", "bt_ticker_b"),
+                ]:
+                    val = loaded_cfg.get(field)
+                    if val is not None:
+                        if val in tickers:
+                            st.session_state[key] = val
+                        else:
+                            skipped.append(f"{field} ('{val}' no está en tus tickers actuales)")
+                for field, key, lo, hi in [
+                    ("window", "bt_window", 5, 250),
+                    ("entry", "bt_entry", 0.0, 3.0),
+                    ("exit_", "bt_exit", 0.0, 1.5),
+                    ("initial_capital", "bt_capital", 1_000, None),
+                    ("commission", "bt_commission", 0.0, 0.05),
+                    ("slippage", "bt_slippage", 0.0, 0.05),
+                ]:
+                    val = loaded_cfg.get(field)
+                    if val is not None:
+                        if isinstance(val, (int, float)) and val >= lo and (hi is None or val <= hi):
+                            st.session_state[key] = val
+                        else:
+                            skipped.append(field)
+                st.session_state["_bt_config_applied"] = uploaded_config.name
+                if skipped:
+                    st.warning(f"Cargado, salvo: {', '.join(skipped)} (fuera de rango o no aplicable ahora).")
+                else:
+                    st.success("Configuración cargada.")
+                st.rerun()
+
     strategy = st.selectbox(
         "Estrategia",
         ["Pairs Trading", "Momentum", "Mean Reversion"],
+        key="bt_strategy",
     )
 
     ticker_b: str | None
@@ -206,35 +259,59 @@ with st.sidebar:
         if len(tickers) < 2:
             callout("Pairs Trading requiere al menos 2 tickers.", variant="warning")
             st.stop()
-        ticker_a = st.selectbox("Ticker A (leg 1)", tickers, index=0)
-        ticker_b = st.selectbox("Ticker B (leg 2)", tickers, index=1)
-        window = st.slider("Ventana Z-score", 20, 200, 60)
-        entry = st.slider("Umbral de entrada (|z|)", 0.5, 3.0, 2.0, 0.1)
-        exit_ = st.slider("Umbral de salida (|z|)", 0.0, 1.5, 0.5, 0.1)
+        ticker_a = st.selectbox("Ticker A (leg 1)", tickers, index=0, key="bt_ticker_a")
+        ticker_b = st.selectbox("Ticker B (leg 2)", tickers, index=1, key="bt_ticker_b")
+        window = st.slider("Ventana Z-score", 20, 200, 60, key="bt_window")
+        entry = st.slider("Umbral de entrada (|z|)", 0.5, 3.0, 2.0, 0.1, key="bt_entry")
+        exit_ = st.slider("Umbral de salida (|z|)", 0.0, 1.5, 0.5, 0.1, key="bt_exit")
     elif strategy == "Momentum":
-        ticker_a = st.selectbox("Ticker", tickers, index=0)
+        ticker_a = st.selectbox("Ticker", tickers, index=0, key="bt_ticker_a")
         ticker_b = None
-        window = st.slider("Ventana de momentum (días)", 5, 250, 60)
+        window = st.slider("Ventana de momentum (días)", 5, 250, 60, key="bt_window")
         entry = None
         exit_ = None
     else:  # Mean Reversion
-        ticker_a = st.selectbox("Ticker", tickers, index=0)
+        ticker_a = st.selectbox("Ticker", tickers, index=0, key="bt_ticker_a")
         ticker_b = None
-        window = st.slider("Ventana media móvil", 10, 200, 30)
-        entry = st.slider("Umbral de entrada (|z|)", 0.5, 3.0, 1.5, 0.1)
-        exit_ = st.slider("Umbral de salida (|z|)", 0.0, 1.5, 0.5, 0.1)
+        window = st.slider("Ventana media móvil", 10, 200, 30, key="bt_window")
+        entry = st.slider("Umbral de entrada (|z|)", 0.5, 3.0, 1.5, 0.1, key="bt_entry")
+        exit_ = st.slider("Umbral de salida (|z|)", 0.0, 1.5, 0.5, 0.1, key="bt_exit")
 
     st.markdown("**Costes y capital**")
     initial_capital = st.number_input(
         "Capital inicial (€)", min_value=1_000, value=100_000, step=10_000,
+        key="bt_capital",
     )
     commission = st.number_input(
         "Comisión (fracción, ej. 0.001 = 10 bps)",
         min_value=0.0, max_value=0.05, value=0.001, step=0.0005, format="%.4f",
+        help="Lo que cobra el bróker por cada operación, como fracción del importe.",
+        key="bt_commission",
     )
     slippage = st.number_input(
         "Slippage (fracción, ej. 0.0005 = 5 bps)",
         min_value=0.0, max_value=0.05, value=0.0005, step=0.0005, format="%.4f",
+        help=(
+            "Diferencia entre el precio al que 'decides' operar y el "
+            "precio al que realmente se ejecuta la orden (por retraso, "
+            "liquidez insuficiente, etc.). Modela ese coste extra, "
+            "aparte de la comisión, para que el backtest no sea "
+            "optimista sobre lo que se conseguiría en la práctica."
+        ),
+        key="bt_slippage",
+    )
+
+    current_config = {
+        "strategy": strategy, "ticker_a": ticker_a, "ticker_b": ticker_b,
+        "window": window, "entry": entry, "exit_": exit_,
+        "initial_capital": initial_capital, "commission": commission,
+        "slippage": slippage,
+    }
+    st.download_button(
+        "💾 Guardar configuración actual (JSON)",
+        json.dumps(current_config, indent=2, ensure_ascii=False).encode("utf-8"),
+        file_name="backtest_config.json",
+        mime="application/json",
     )
 
     run = st.button("🚀 Ejecutar backtest", type="primary", use_container_width=True)
@@ -250,6 +327,7 @@ if run:
         except (ValueError, ConnectionError) as e:
             callout(f"Error al cargar datos: {e}", variant="danger")
             st.stop()
+        data_preview(prices)
 
     with st.spinner(f"Generando señales ({strategy})..."):
         try:

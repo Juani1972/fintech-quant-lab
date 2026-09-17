@@ -23,7 +23,7 @@ from app.state import (
     get_global_provider,
     get_global_provider_kwargs,
 )
-from app.styles import callout, footer, hero, page_setup, section
+from app.styles import callout, data_preview, footer, hero, page_setup, section
 
 page_setup("Optimización", "🎯")
 
@@ -85,10 +85,23 @@ with st.sidebar:
 
     objective = st.selectbox(
         "Objetivo OOS", ["sharpe", "sortino", "calmar", "total_return"], index=0,
+        help=(
+            "Métrica out-of-sample que decide qué combinación de "
+            "parámetros es 'la mejor' -- el grid search elige la que "
+            "puntúe más alto en ESTA métrica, no en las demás. Sharpe es "
+            "el estándar; Sortino penaliza solo la volatilidad a la baja; "
+            "Calmar prioriza el ratio retorno/drawdown."
+        ),
     )
 
-    train_size = st.slider("Train size", 200, 1000, 504, 21)
-    test_size = st.slider("Test size", 21, 250, 126, 21)
+    train_size = st.slider(
+        "Train size", 200, 1000, 504, 21,
+        help="Días usados para ajustar cada combinación del grid, antes de evaluarla out-of-sample.",
+    )
+    test_size = st.slider(
+        "Test size", 21, 250, 126, 21,
+        help="Días usados para evaluar cada combinación -- esto es lo que de verdad puntúa cada casilla del grid.",
+    )
 
     run = st.button("🚀 Optimizar", type="primary", use_container_width=True)
 
@@ -100,6 +113,7 @@ if run:
         except (ValueError, ConnectionError) as e:
             callout(f"Error al cargar datos: {e}", variant="danger")
             st.stop()
+        data_preview(prices)
 
     if strategy == "Pairs Trading (spread)":
         assert entries is not None, "entries solo es None cuando strategy == 'Momentum'"
