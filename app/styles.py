@@ -360,6 +360,54 @@ def data_preview(prices: pd.DataFrame) -> None:
         st.caption("Estadísticas descriptivas:")
         st.dataframe(prices.describe().T, use_container_width=True)
 
+        st.markdown("**🔬 Validación avanzada**")
+        st.caption(
+            "Outliers y estacionariedad se calculan sobre los RETORNOS, no "
+            "sobre los precios en nivel -- una serie de precios con "
+            "tendencia marcaría como \"atípico\" cualquier valor alejado de "
+            "su media histórica, sin que sea un error de datos real."
+        )
+        from app.core.data_loader import compute_log_returns, detect_outliers, stationarity_report
+
+        returns = compute_log_returns(prices)
+        if returns.empty:
+            st.caption("No hay suficientes datos para calcular retornos.")
+        else:
+            outlier_mask = detect_outliers(returns, method="zscore", threshold=5.0)
+            n_outliers = int(outlier_mask.sum().sum())
+            if n_outliers:
+                st.warning(
+                    f"⚠️ {n_outliers} retorno(s) diario(s) marcado(s) como "
+                    "atípico(s) (> 5 desviaciones típicas de la media, por "
+                    "columna)."
+                )
+                outlier_dates = outlier_mask[outlier_mask.any(axis=1)]
+                st.dataframe(
+                    prices.reindex(outlier_dates.index).round(4),
+                    use_container_width=True,
+                )
+            else:
+                st.caption("Sin retornos atípicos detectados (z-score > 5).")
+
+            try:
+                stat_report = stationarity_report(returns)
+                stat_report_display = stat_report.copy()
+                stat_report_display["is_stationary"] = stat_report_display["is_stationary"].map(
+                    {True: "✅ Sí", False: "❌ No"}
+                )
+                st.caption("Estacionariedad de los retornos (test ADF, p < 0.05 = estacionario):")
+                st.dataframe(stat_report_display, use_container_width=True)
+                if (~stat_report["is_stationary"]).any():
+                    st.warning(
+                        "⚠️ Al menos un ticker tiene retornos no estacionarios "
+                        "-- inusual (los retornos financieros normalmente sí "
+                        "lo son); revisa si hay tramos con comportamiento muy "
+                        "distinto entre sí en la misma serie (p. ej. un "
+                        "cambio de negocio, una fusión, o un error de datos)."
+                    )
+            except Exception as e:  # noqa: BLE001
+                st.caption(f"No se pudo calcular la estacionariedad: {e}")
+
 
 def named_config_manager(current_config: dict, page_key: str) -> dict | None:
     """Guardar/cargar varias configuraciones con nombre, dentro de la

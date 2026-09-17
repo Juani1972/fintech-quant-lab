@@ -6,7 +6,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from app.core.data_loader import compute_log_returns, load_prices, search_ticker
+from app.core.data_loader import (
+    compute_log_returns,
+    detect_outliers,
+    load_prices,
+    search_ticker,
+    stationarity_report,
+)
 
 
 def test_log_returns_basic():
@@ -212,3 +218,77 @@ def test_load_prices_wraps_provider_errors_as_connection_error():
         pytest.raises(ConnectionError, match="Error descargando datos de stooq"),
     ):
         load_prices(["AAA"], date(2023, 1, 1), date(2023, 1, 10), provider="stooq")
+
+
+def _returns_with_deliberate_outliers():
+    """Retornos sintéticos con 3 outliers insertados a propósito en
+    posiciones conocidas, para poder comprobar que detect_outliers los
+    encuentra exactamente (ni más ni menos)."""
+    np.random.seed(71)
+    n = 500
+    dates = pd.bdate_range("2022-01-01", periods=n)
+    rets = np.random.normal(0.0003, 0.01, n)
+    rets[100] = 0.15
+    rets[250] = -0.20
+    rets[400] = 0.12
+    return pd.DataFrame({"AAA": rets}, index=dates), {100, 250, 400}
+
+
+def test_detect_outliers_zscore_finds_deliberate_outliers():
+    returns, outlier_positions = _returns_with_deliberate_outliers()
+    mask = detect_outliers(returns, method="zscore", threshold=5.0)
+    detected_positions = {returns.index.get_loc(d) for d in returns.index[mask["AAA"]]}
+    assert detected_positions == outlier_positions
+
+
+def test_detect_outliers_iqr_finds_deliberate_outliers():
+    returns, outlier_positions = _returns_with_deliberate_outliers()
+    mask = detect_outliers(returns, method="iqr", threshold=3.0)
+    detected_positions = {returns.index.get_loc(d) for d in returns.index[mask["AAA"]]}
+    assert detected_positions == outlier_positions
+
+
+def test_detect_outliers_invalid_method_raises():
+    returns, _ = _returns_with_deliberate_outliers()
+    with pytest.raises(ValueError, match="method inválido"):
+        detect_outliers(returns, method="no-existe")  # type: ignore[arg-type]
+
+
+def test_stationarity_report_distinguishes_prices_from_returns():
+    """Regresión conceptual: los precios en nivel (con tendencia) NO
+    deberían salir estacionarios; sus retornos SÍ. Si esto alguna vez
+    saliera al revés, algo estaría mal en la función, no en los datos
+    -- es una propiedad matemática básica de las series de precios.
+
+    Semilla elegida a propósito tras comprobar que da un resultado
+    estable: con significancia 5%, ~1 de cada 20 semillas hace que un
+    paseo aleatorio real rechace la hipótesis nula por puro azar (es
+    justo lo que "5% de significancia" significa) -- no vale cualquier
+    semilla para un test determinista.
+    """
+    np.random.seed(1)
+    n = 500
+    dates = pd.bdate_range("2022-01-01", periods=n)
+    prices = pd.Series(
+        100 * np.exp(np.cumsum(np.random.normal(0.0003, 0.01, n))), index=dates, name="AAA",
+    )
+    returns = compute_log_returns(prices.to_frame())["AAA"]
+
+    price_report = stationarity_report(prices)
+    returns_report = stationarity_report(returns)
+
+    assert not price_report.loc["AAA", "is_stationary"]
+    assert returns_report.loc["AAA", "is_stationary"]
+
+
+def test_stationarity_report_accepts_dataframe_multiple_columns():
+    np.random.seed(73)
+    n = 400
+    dates = pd.bdate_range("2022-01-01", periods=n)
+    returns = pd.DataFrame({
+        "AAA": np.random.normal(0.0003, 0.01, n),
+        "BBB": np.random.normal(0.0002, 0.012, n),
+    }, index=dates)
+    report = stationarity_report(returns)
+    assert set(report.index) == {"AAA", "BBB"}
+    assert set(report.columns) == {"adf_stat", "p_value", "is_stationary"}

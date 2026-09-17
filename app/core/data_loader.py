@@ -209,3 +209,88 @@ def search_ticker(query: str, max_results: int = 8) -> list[dict[str, str]]:
         for q in quotes
         if q.get("symbol")
     ]
+
+
+def detect_outliers(
+    returns: pd.DataFrame,
+    method: Literal["zscore", "iqr"] = "zscore",
+    threshold: float = 5.0,
+) -> pd.DataFrame:
+    """Detecta retornos atípicos, por columna.
+
+    Deliberadamente opera sobre RETORNOS, no sobre precios en nivel:
+    una serie de precios con tendencia (p. ej. una acción que sube de
+    50€ a 500€ en varios años) haría que cualquier recorte por
+    cuantiles/z-score sobre el PRECIO marcara como "outlier" y
+    descartara observaciones perfectamente válidas del principio o
+    el final de la serie -- no detectaría ninguna anomalía real, solo
+    rompería la serie temporal. Los retornos, al no tener tendencia,
+    sí son la magnitud correcta sobre la que buscar valores atípicos.
+
+    Args:
+        returns: Retornos (p. ej. de `compute_log_returns`), una
+            columna por ticker.
+        method: 'zscore' (desviaciones típicas respecto a la media,
+            por columna) o 'iqr' (rango intercuartílico, más robusto
+            frente a los propios outliers que intenta detectar, ya
+            que Q1/Q3 no los usa como referencia central).
+        threshold: Para 'zscore', nº de desviaciones típicas (5.0 es
+            un umbral conservador: solo marca movimientos extremos de
+            verdad). Para 'iqr', multiplicador del rango
+            intercuartílico (1.5 es el valor clásico de Tukey; 3.0 es
+            más conservador).
+
+    Returns:
+        DataFrame booleano del mismo shape que `returns` -- True donde
+        el retorno de esa fecha/ticker se considera atípico.
+
+    Raises:
+        ValueError: Si `method` no es 'zscore' ni 'iqr'.
+    """
+    if method == "zscore":
+        z = (returns - returns.mean()) / returns.std()
+        return z.abs() > threshold
+
+    if method == "iqr":
+        q1 = returns.quantile(0.25)
+        q3 = returns.quantile(0.75)
+        iqr = q3 - q1
+        lower = q1 - threshold * iqr
+        upper = q3 + threshold * iqr
+        return (returns < lower) | (returns > upper)
+
+    raise ValueError(f"method inválido: '{method}'. Usa 'zscore' o 'iqr'.")
+
+
+def stationarity_report(series: pd.DataFrame | pd.Series, significance: float = 0.05) -> pd.DataFrame:
+    """Test de Dickey-Fuller aumentado (ADF), por columna.
+
+    Nota importante: los PRECIOS en nivel son, casi siempre, no
+    estacionarios -- eso es lo normal y esperable en series
+    financieras (tienen tendencia/paseo aleatorio), no un problema de
+    calidad de datos. La pregunta que de verdad suele importar es si
+    los RETORNOS son estacionarios (habitualmente sí). Pásale
+    `compute_log_returns(prices)` en vez de `prices` si lo que
+    quieres es esa segunda pregunta.
+
+    Args:
+        series: Serie o DataFrame (una columna por ticker) a testear.
+        significance: Umbral de p-valor para considerar la serie
+            estacionaria (por defecto 0.05).
+
+    Returns:
+        DataFrame indexado por ticker con columnas 'adf_stat',
+        'p_value', 'is_stationary' (bool: p_value < significance).
+    """
+    from app.core.cointegration import adf_full
+
+    if isinstance(series, pd.Series):
+        series = series.to_frame(series.name or "value")
+
+    rows = {}
+    for col in series.columns:
+        stat, pval, _crit = adf_full(series[col])
+        rows[col] = {
+            "adf_stat": stat, "p_value": pval, "is_stationary": pval < significance,
+        }
+    return pd.DataFrame(rows).T
