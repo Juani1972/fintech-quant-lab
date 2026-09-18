@@ -14,6 +14,7 @@ from app.config import (
     DEFAULT_TICKERS,
     PAGES,
 )
+from app.core.ai_report import DEFAULT_MODEL as DEFAULT_GEMINI_MODEL
 from app.core.data_loader import search_ticker
 from app.core.universe import list_universes, universe_to_string
 from app.styles import (
@@ -39,6 +40,8 @@ if "global_start" not in st.session_state:
     st.session_state["global_start"] = DEFAULT_START
 if "global_end" not in st.session_state:
     st.session_state["global_end"] = DEFAULT_END
+if "gemini_model" not in st.session_state:
+    st.session_state["gemini_model"] = DEFAULT_GEMINI_MODEL
 
 
 # ============================================================
@@ -154,6 +157,34 @@ with st.sidebar:
                 help="Gratis en alphavantage.co/support/#api-key. Límite "
                      "de la cuenta gratuita: 25 peticiones/día.",
             )
+
+    # --- Informes con IA ---
+    with st.expander("🤖 Informes con IA (Google Gemini)"):
+        st.caption(
+            "Opcional -- solo hace falta si quieres que las páginas "
+            "generen un informe interpretando los resultados, además de "
+            "las conclusiones automáticas que ya incluyen. Tu clave se "
+            "queda en esta sesión, en tu propio equipo -- nunca se envía "
+            "a ningún sitio salvo a la API de Google."
+        )
+        st.text_input(
+            "API key de Google AI Studio", type="password",
+            key="gemini_api_key",
+            help=(
+                "Gratis en aistudio.google.com/apikey, sin tarjeta. "
+                "Nivel gratuito: hasta 250 peticiones/día según el "
+                "modelo -- de sobra para uso normal."
+            ),
+        )
+        st.text_input(
+            "Modelo", key="gemini_model",
+            help=(
+                "Los nombres y niveles gratuitos de los modelos de "
+                "Gemini cambian con cierta frecuencia -- si el modelo "
+                "por defecto deja de funcionar, consulta "
+                "aistudio.google.com para ver el nombre vigente."
+            ),
+        )
 
     # --- Selector de universo ---
     st.selectbox(

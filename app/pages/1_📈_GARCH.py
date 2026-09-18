@@ -3,6 +3,7 @@ import json
 
 import streamlit as st
 
+from app.core.ai_report import AIReportError, generate_report
 from app.core.data_loader import compute_log_returns, load_prices
 from app.core.garch import (
     check_stationarity,
@@ -14,6 +15,8 @@ from app.core.garch import (
 from app.core.plotting import line_chart
 from app.state import (
     ensure_session_initialized,
+    get_gemini_api_key,
+    get_gemini_model,
     get_global_params,
     get_global_provider,
     get_global_provider_kwargs,
@@ -238,6 +241,46 @@ if run:
 
     conclusion_text, conclusion_variant = plain_language_summary(result, fc)
     conclusion(conclusion_text, variant=conclusion_variant)
+
+    section("🤖 Informe con IA")
+    gemini_key = get_gemini_api_key()
+    if not gemini_key:
+        callout(
+            "Configura tu clave gratuita de Google AI Studio en la barra "
+            "lateral de la portada ('🤖 Informes con IA') para generar un "
+            "informe más completo, interpretando estos resultados con IA.",
+            variant="info",
+        )
+    else:
+        if st.button("🤖 Generar informe con IA"):
+            ai_prompt = (
+                "Eres un analista cuantitativo. Te doy el resultado de "
+                f"ajustar un modelo GARCH ({vol}, p={p}, q={q}, "
+                f"distribución {dist}) sobre {ticker}. Escribe un informe "
+                "breve (unas 300 palabras) en español, en tono profesional "
+                "pero accesible para alguien sin formación financiera "
+                "avanzada. Interpreta qué significa la volatilidad actual "
+                "y el pronóstico, qué implicaciones prácticas tiene (no "
+                "en qué dirección se moverá el precio, GARCH no predice "
+                "eso), y cualquier matiz relevante sobre la fiabilidad del "
+                "ajuste. No inventes datos que no se te han dado.\n\n"
+                f"Volatilidad actual: {float(result.conditional_volatility.iloc[-1]):.4f}\n"
+                f"Volatilidad media histórica: {float(result.conditional_volatility.mean()):.4f}\n"
+                f"Pronóstico a 30 días (último valor): {float(fc.iloc[-1]):.4f}\n"
+                f"AIC: {result.aic:.2f}, convergió: {result.converged}\n\n"
+                f"Conclusión automática ya generada por la app: {conclusion_text}"
+            )
+            with st.spinner("Generando informe con IA..."):
+                try:
+                    st.session_state["garch_ai_report"] = generate_report(
+                        ai_prompt, api_key=gemini_key, model=get_gemini_model(),
+                    )
+                except AIReportError as e:
+                    st.session_state["garch_ai_report"] = None
+                    st.error(f"No se pudo generar el informe: {e}")
+
+        if st.session_state.get("garch_ai_report"):
+            st.markdown(st.session_state["garch_ai_report"])
 
     with st.expander("📋 Resumen completo del modelo"):
         st.text(result.model_result.summary().as_text())

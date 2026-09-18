@@ -6,6 +6,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from app.core.ai_report import AIReportError, generate_report
 from app.core.alerts import AlertDispatcher, check_backtest_rules
 from app.core.backtest import (
     BacktestMode,
@@ -28,6 +29,8 @@ from app.core.history import init_db, save_run
 from app.core.report import build_backtest_report
 from app.state import (
     ensure_session_initialized,
+    get_gemini_api_key,
+    get_gemini_model,
     get_global_params,
     get_global_provider,
     get_global_provider_kwargs,
@@ -425,6 +428,44 @@ if run:
 
     conclusion_text, conclusion_variant = plain_language_summary(result)
     conclusion(conclusion_text, variant=conclusion_variant)
+
+    section("🤖 Informe con IA")
+    gemini_key = get_gemini_api_key()
+    if not gemini_key:
+        callout(
+            "Configura tu clave gratuita de Google AI Studio en la barra "
+            "lateral de la portada ('🤖 Informes con IA') para generar un "
+            "informe más completo, interpretando estos resultados con IA.",
+            variant="info",
+        )
+    else:
+        if st.button("🤖 Generar informe con IA"):
+            ai_prompt = (
+                "Eres un analista cuantitativo. Te doy los resultados de un "
+                f"backtest de una estrategia de trading ({strategy}) sobre "
+                f"{ticker_a}" + (f" y {ticker_b}" if ticker_b else "") + ", "
+                f"del {start} al {end}. Escribe un informe breve (unas 300 "
+                "palabras) en español, en tono profesional pero accesible "
+                "para alguien sin formación financiera avanzada. Interpreta "
+                "qué significan estos números en la práctica, si el "
+                "resultado parece fiable dado el número de operaciones, y "
+                "qué riesgos o matices debería tener en cuenta antes de "
+                "operar con esta estrategia. No inventes datos que no se "
+                "te han dado.\n\n"
+                f"Métricas: {json.dumps({k: (round(v, 4) if isinstance(v, float) else v) for k, v in result.metrics.items()}, ensure_ascii=False)}\n\n"
+                f"Conclusión automática ya generada por la app: {conclusion_text}"
+            )
+            with st.spinner("Generando informe con IA..."):
+                try:
+                    st.session_state["bt_ai_report"] = generate_report(
+                        ai_prompt, api_key=gemini_key, model=get_gemini_model(),
+                    )
+                except AIReportError as e:
+                    st.session_state["bt_ai_report"] = None
+                    st.error(f"No se pudo generar el informe: {e}")
+
+        if st.session_state.get("bt_ai_report"):
+            st.markdown(st.session_state["bt_ai_report"])
 
     section("📈 Curva de capital")
     bh = buy_and_hold(benchmark_prices, initial_capital=initial_capital)

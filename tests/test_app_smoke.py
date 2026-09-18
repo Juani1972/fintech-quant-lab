@@ -672,3 +672,70 @@ def test_pages_with_ticker_badge_show_correct_selection():
         badges = [m.value for m in at.markdown if '<div class="fql-ticker-badge"' in (m.value or "")]
         assert badges, f"{page}: no se encontró ningún ticker_badge"
         assert f"Analizando: {expected}</div>" in badges[0], f"{page}: {badges[0]}"
+
+
+@pytest.mark.parametrize(
+    "page_path,session_key",
+    [
+        ("1_📈_GARCH.py", "garch_ai_report"),
+        ("5_🧪_Backtest.py", "bt_ai_report"),
+    ],
+)
+def test_ai_report_section_loads_without_key_and_without_exception(page_path, session_key):
+    """Regresión: las páginas con sección de informe con IA deben cargar
+    sin excepción cuando NO hay clave de Gemini configurada -- deben
+    mostrar un aviso informativo, no romper la página."""
+    at = AppTest.from_file(str(APP_DIR / "pages" / page_path), default_timeout=30)
+    at.session_state["global_tickers"] = "AAA, BBB"
+    at.run()
+    assert not at.exception
+
+
+def test_gemini_settings_seeded_with_correct_default():
+    """Regresión: la portada debe sembrar gemini_model con el valor por
+    defecto correcto ('gemini-2.5-flash') al iniciar una sesión nueva --
+    detectamos y arreglamos un bug donde salía vacío porque main.py tiene
+    su propia inicialización de sesión, separada de ensure_session_initialized()."""
+    at = AppTest.from_file(str(APP_DIR.parent / "app" / "main.py"), default_timeout=30)
+    at.run()
+    assert not at.exception
+    assert at.session_state["gemini_model"] == "gemini-2.5-flash"
+
+
+def test_generate_report_roundtrip_isolated():
+    """Regresión: el flujo completo de generar un informe con IA (prompt
+    → generate_report mockeada → guardado en session_state → mostrado en
+    pantalla) funciona sin excepción, y los errores de la API quedan
+    capturados y mostrados como st.error sin romper la app."""
+    from unittest.mock import patch
+
+    from app.core.ai_report import AIReportError
+
+    script = """
+import streamlit as st
+from app.core.ai_report import AIReportError, generate_report
+
+if st.button("Generar"):
+    try:
+        st.session_state["ai_report"] = generate_report("prompt", api_key="clave", model="gemini-2.5-flash")
+    except AIReportError as e:
+        st.session_state["ai_report"] = None
+        st.error(str(e))
+
+if st.session_state.get("ai_report"):
+    st.markdown(st.session_state["ai_report"])
+"""
+    with patch("app.core.ai_report.generate_report", return_value="## Informe\nContenido."):
+        at = AppTest.from_string(script, default_timeout=15)
+        at.run()
+        at.button[0].click().run()
+        assert not at.exception
+        assert at.session_state["ai_report"] == "## Informe\nContenido."
+
+    with patch("app.core.ai_report.generate_report", side_effect=AIReportError("429 límite")):
+        at2 = AppTest.from_string(script, default_timeout=15)
+        at2.run()
+        at2.button[0].click().run()
+        assert not at2.exception
+        errors = [e.value for e in at2.error]
+        assert any("429" in (e or "") for e in errors)

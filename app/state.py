@@ -63,6 +63,23 @@ def get_global_provider_kwargs() -> dict:
     return {}
 
 
+def get_gemini_api_key() -> str:
+    """Clave de Google AI Studio introducida por el usuario en el
+    desplegable '🤖 Informes con IA' de main.py -- vacía si no se ha
+    configurado ninguna. Las páginas que ofrezcan generar un informe
+    con IA deben comprobar esto antes de mostrar el botón/sección
+    correspondiente, y explicar cómo conseguir una clave si está vacía."""
+    return str(st.session_state.get("gemini_api_key", ""))
+
+
+def get_gemini_model() -> str:
+    """Nombre del modelo de Gemini elegido por el usuario (por
+    defecto, el de `app.core.ai_report.DEFAULT_MODEL`)."""
+    from app.core.ai_report import DEFAULT_MODEL
+
+    return str(st.session_state.get("gemini_model", DEFAULT_MODEL))
+
+
 def ensure_session_initialized() -> None:
     """Inicializa las claves de sesión si no existen.
 
@@ -78,3 +95,6 @@ def ensure_session_initialized() -> None:
         st.session_state["global_end"] = DEFAULT_END
     if "global_provider" not in st.session_state:
         st.session_state["global_provider"] = "yahoo"
+    if "gemini_model" not in st.session_state:
+        from app.core.ai_report import DEFAULT_MODEL
+        st.session_state["gemini_model"] = DEFAULT_MODEL
