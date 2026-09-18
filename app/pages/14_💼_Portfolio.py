@@ -23,7 +23,16 @@ from app.state import (
     get_global_provider,
     get_global_provider_kwargs,
 )
-from app.styles import callout, data_preview, footer, hero, kpi_row, page_setup, section
+from app.styles import (
+    callout,
+    data_preview,
+    footer,
+    hero,
+    kpi_row,
+    page_setup,
+    section,
+    ticker_badge,
+)
 
 page_setup("Portfolio", "💼")
 
@@ -169,6 +178,8 @@ with st.sidebar:
     )
 
     run_clicked = st.button("🚀 Calcular cartera", type="primary")
+
+ticker_badge(*tickers)
 
 if not run_clicked:
     callout(
