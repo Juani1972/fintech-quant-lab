@@ -27,6 +27,7 @@ from app.styles import (
     named_config_manager,
     page_setup,
     section,
+    ticker_badge,
 )
 
 page_setup("GARCH", "📈")
@@ -168,6 +169,7 @@ with st.sidebar:
 
     run = st.button("🚀 Ejecutar GARCH", type="primary", use_container_width=True)
 
+ticker_badge(ticker)
 
 if run:
     with st.spinner("Descargando datos..."):
