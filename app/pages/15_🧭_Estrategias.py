@@ -14,7 +14,7 @@ from app.state import (
     get_global_provider,
     get_global_provider_kwargs,
 )
-from app.styles import callout, data_preview, footer, hero, page_setup, section
+from app.styles import callout, data_preview, footer, hero, page_setup, section, ticker_badge
 
 page_setup("Estrategias", "🧭")
 
@@ -202,6 +202,11 @@ with st.sidebar:
     )
 
     run_clicked = st.button("🚀 Generar señales", type="primary")
+
+if single_ticker:
+    ticker_badge(single_ticker)
+else:
+    ticker_badge(*tickers)
 
 if strategy_name == "carry_trade":
     callout(
