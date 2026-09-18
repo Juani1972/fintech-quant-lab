@@ -27,7 +27,7 @@ from app.state import (
     get_global_provider,
     get_global_provider_kwargs,
 )
-from app.styles import callout, data_preview, footer, hero, page_setup, section
+from app.styles import callout, data_preview, footer, hero, page_setup, section, ticker_badge
 
 page_setup("Robustez", "🛡️")
 
@@ -160,6 +160,8 @@ with st.sidebar:
     )
 
     run = st.button("🚀 Analizar robustez", type="primary", use_container_width=True)
+
+ticker_badge(t1, t2)
 
 
 if run:
