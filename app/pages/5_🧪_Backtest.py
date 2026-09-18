@@ -41,6 +41,7 @@ from app.styles import (
     named_config_manager,
     page_setup,
     section,
+    ticker_badge,
 )
 
 page_setup("Backtest", "🧪")
@@ -350,6 +351,7 @@ with st.sidebar:
 
     run = st.button("🚀 Ejecutar backtest", type="primary", use_container_width=True)
 
+ticker_badge(ticker_a, ticker_b)
 
 # ============================================================
 #  Ejecución
