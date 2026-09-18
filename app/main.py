@@ -93,6 +93,32 @@ with st.sidebar:
                         if r["symbol"] not in current:
                             current.append(r["symbol"])
                         st.session_state["global_tickers"] = ", ".join(current)
+                        # Además de añadirlo a la lista global, lo
+                        # seleccionamos ya en las páginas de UN solo
+                        # ticker (sin ambigüedad de en qué hueco
+                        # ponerlo) -- si no, cada página se queda con
+                        # la selección anterior (Streamlit no cambia
+                        # solo un selectbox porque la lista de
+                        # opciones creció) y da la sensación de que la
+                        # empresa buscada "no se ha añadido", aunque sí
+                        # esté disponible para elegir a mano. En
+                        # páginas de DOS tickers (Cointegración,
+                        # Kalman, Backtest...) no lo tocamos por la
+                        # ambigüedad de qué hueco rellenar -- ahí sigue
+                        # apareciendo como opción para elegir.
+                        for _single_ticker_key in (
+                            "garch_ticker", "riesgo_ticker",
+                            "regimenes_ticker", "ff_ticker",
+                        ):
+                            st.session_state[_single_ticker_key] = r["symbol"]
+                        st.session_state["_last_searched_ticker"] = r["symbol"]
+                        st.toast(
+                            f"✅ {r['symbol']} añadido. Ya está seleccionado en las "
+                            "páginas de un solo ticker (GARCH, Riesgo, Regímenes, "
+                            "Fama-French); en las de dos tickers (Cointegración, "
+                            "Kalman, Backtest...) elígelo a mano en su desplegable.",
+                            icon="✅",
+                        )
                         st.rerun()
             elif len(search_query.strip()) >= 2:
                 st.caption(

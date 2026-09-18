@@ -247,6 +247,18 @@ def inject_css() -> None:
         .fql-conclusion-danger  {{ background: {THEME["danger"]}12;  border-color: {THEME["danger"]}; }}
         .fql-conclusion-info    {{ background: {THEME["primary"]}12; border-color: {THEME["primary"]}; }}
 
+        .fql-ticker-badge {{
+            display: inline-block;
+            padding: 6px 14px;
+            border-radius: 999px;
+            background: {THEME["primary"]}15;
+            border: 1px solid {THEME["primary"]}40;
+            color: {THEME["primary"]};
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin: 0.3rem 0 1rem 0;
+        }}
+
         .fql-footer {{
             text-align: center;
             color: {THEME["muted"]};
@@ -346,6 +358,30 @@ def conclusion(text: str, variant: str = "info") -> None:
         f'<div class="fql-conclusion fql-conclusion-{variant}">'
         f'<span class="fql-conclusion-label">🎯 Conclusión</span>{text}'
         f'</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def ticker_badge(*tickers: str | None) -> None:
+    """Insignia visible con la(s) empresa(s) seleccionada(s) en esta
+    página en concreto -- para que quede claro en todo momento sobre
+    qué se está analizando, sobre todo tras usar el buscador de la
+    portada (que solo selecciona automáticamente el ticker en las
+    páginas de un único ticker; en el resto hay que elegirlo a mano,
+    y esta insignia deja claro cuál está activo ahora mismo).
+
+    Args:
+        *tickers: uno o más símbolos (None se descarta -- útil para
+            pasar directamente un `ticker_b` opcional sin comprobarlo
+            antes). Si no queda ninguno tras descartar los None, no
+            se muestra nada.
+    """
+    clean = [t for t in tickers if t]
+    if not clean:
+        return
+    label = " vs ".join(clean) if len(clean) == 2 else ", ".join(clean)
+    st.markdown(
+        f'<div class="fql-ticker-badge">📊 Analizando: {label}</div>',
         unsafe_allow_html=True,
     )
 

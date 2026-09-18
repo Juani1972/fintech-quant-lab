@@ -576,3 +576,99 @@ data_preview(prices)
 
     download_labels = [b.label for b in at.get("download_button")]
     assert any("Descargar estos precios" in (label or "") for label in download_labels)
+
+
+def test_search_ticker_button_selects_ticker_on_single_ticker_pages():
+    """Regresión: al añadir un ticker desde el buscador de la portada,
+    debe quedar seleccionado automáticamente en las páginas de UN solo
+    ticker (GARCH, Riesgo, Regímenes, Fama-French) -- antes solo se
+    añadía a la lista global, y cada página se quedaba con su
+    selección anterior (Streamlit no cambia solo un selectbox porque
+    la lista de opciones creció), dando la sensación de que la
+    empresa buscada "no se añadía" aunque sí estuviera disponible
+    para elegir a mano.
+
+    Se prueba con un script aislado que replica el callback del botón
+    de resultado de búsqueda, en vez de a través de main.py real --
+    search_ticker() necesita red real, que AppTest no tiene."""
+    script = """
+import streamlit as st
+
+st.session_state.setdefault("global_tickers", "AAPL, MSFT")
+st.session_state.setdefault("garch_ticker", "AAPL")
+
+if st.button("Simular clic en resultado de búsqueda: KO"):
+    current = [t.strip() for t in st.session_state["global_tickers"].split(",") if t.strip()]
+    if "KO" not in current:
+        current.append("KO")
+    st.session_state["global_tickers"] = ", ".join(current)
+    for k in ("garch_ticker", "riesgo_ticker", "regimenes_ticker", "ff_ticker"):
+        st.session_state[k] = "KO"
+    st.toast("KO añadido")
+    st.rerun()
+"""
+    at = AppTest.from_string(script, default_timeout=15)
+    at.run()
+    assert not at.exception
+
+    at.button[0].click().run()
+    assert not at.exception
+
+    assert at.session_state["global_tickers"] == "AAPL, MSFT, KO"
+    for key in ("garch_ticker", "riesgo_ticker", "regimenes_ticker", "ff_ticker"):
+        assert at.session_state[key] == "KO"
+    assert len(at.get("toast")) > 0
+
+
+def test_ticker_badge_shows_single_pair_and_none_cases():
+    """Regresión: ticker_badge() debe mostrar un único ticker, una
+    pareja unida con ' vs ', una cesta de varios unida con ', ', y no
+    mostrar nada si todos los argumentos son None -- probado de forma
+    aislada (sin depender de ninguna página real ni de red)."""
+    script = """
+from app.styles import ticker_badge
+ticker_badge("KO")
+ticker_badge("KO", "PEP")
+ticker_badge("KO", "PEP", "AAPL")
+ticker_badge("KO", None)
+ticker_badge(None, None)
+"""
+    at = AppTest.from_string(script, default_timeout=15)
+    at.run()
+    assert not at.exception
+
+    badges = [m.value for m in at.markdown if '<div class="fql-ticker-badge"' in (m.value or "")]
+    assert len(badges) == 4
+    assert "KO</div>" in badges[0]
+    assert "KO vs PEP</div>" in badges[1]
+    assert "KO, PEP, AAPL</div>" in badges[2]
+    assert "KO</div>" in badges[3]
+
+
+def test_pages_with_ticker_badge_show_correct_selection():
+    """Regresión: las 12 páginas con ticker_badge() deben mostrar la
+    selección real de cada una (uno, dos, o la cesta completa según
+    corresponda) -- confirma tanto que no rompen como que el ticker
+    mostrado es el correcto, no solo que el componente exista."""
+    cases = [
+        ("1_📈_GARCH.py", "AAPL"),
+        ("2_🔗_Cointegración.py", "AAPL vs MSFT"),
+        ("3_📊_Fama_French.py", "AAPL"),
+        ("4_⚠️_Riesgo.py", "AAPL"),
+        ("5_🧪_Backtest.py", "AAPL vs MSFT"),
+        ("6_🔬_WalkForward.py", "AAPL vs MSFT"),
+        ("7_🎯_Optimización.py", "AAPL"),
+        ("8_🛡️_Robustez.py", "AAPL"),
+        ("11_📉_Regímenes.py", "AAPL"),
+        ("12_🎛️_Kalman.py", "AAPL vs MSFT"),
+        ("14_💼_Portfolio.py", "AAPL, MSFT, KO"),
+        ("15_🧭_Estrategias.py", "AAPL, MSFT, KO"),
+    ]
+    for page, expected in cases:
+        at = AppTest.from_file(str(APP_DIR / "pages" / page), default_timeout=30)
+        at.session_state["global_tickers"] = "AAPL, MSFT, KO"
+        at.run()
+        assert not at.exception, f"{page}: {at.exception}"
+        badges = [m.value for m in at.markdown if '<div class="fql-ticker-badge"' in (m.value or "")]
+        assert badges, f"{page}: no se encontró ningún ticker_badge"
+        assert f"Analizando: {expected}</div>" in badges[0], f"{page}: {badges[0]}"
