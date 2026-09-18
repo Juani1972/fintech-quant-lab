@@ -26,7 +26,7 @@ from app.state import (
     get_global_provider,
     get_global_provider_kwargs,
 )
-from app.styles import callout, data_preview, footer, hero, page_setup, section
+from app.styles import callout, data_preview, footer, hero, page_setup, section, ticker_badge
 
 page_setup("Riesgo", "⚠️")
 
@@ -101,6 +101,7 @@ with st.sidebar:
 
     run = st.button("🚀 Calcular riesgo", type="primary", use_container_width=True)
 
+ticker_badge(ticker)
 
 if run:
     with st.spinner("Descargando datos..."):
