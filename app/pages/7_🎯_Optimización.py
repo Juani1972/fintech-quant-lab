@@ -332,6 +332,11 @@ if run:
         "oos_sharpe", "oos_max_drawdown", "oos_n_trades",
     ]
     display_cols = [c for c in display_cols if c in result.grid.columns]
+    # Si objective == "sharpe", "oos_sharpe" aparece dos veces en la
+    # lista (una por f"oos_{objective}" y otra por el literal de abajo).
+    # pandas no permite sort_values sobre una etiqueta duplicada, así
+    # que deduplicamos preservando el orden original.
+    display_cols = list(dict.fromkeys(display_cols))
     st.dataframe(
         result.grid[display_cols].sort_values(f"oos_{objective}", ascending=False),
         use_container_width=True,
