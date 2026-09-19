@@ -7,6 +7,9 @@ La lista de tickers (`global_tickers`) la controla ENTERAMENTE `main.py`
 a través del campo de texto de la barra lateral. `state.py` solo se
 encarga de que la clave exista (aunque sea vacía) para que las páginas
 no revienten si se navega directamente por URL sin pasar por la portada.
+
+La clave de Gemini se resuelve con cascada en `app.credentials`:
+secrets → env var → fichero local → campo manual de la barra lateral.
 """
 from __future__ import annotations
 
@@ -46,7 +49,8 @@ def get_global_provider() -> str:
 
 def get_global_provider_kwargs() -> dict:
     """kwargs adicionales para `load_prices(..., provider_kwargs=...)`
-    según el proveedor elegido."""
+    según el proveedor elegido (p.ej. la api_key de Alpha Vantage).
+    """
     if get_global_provider() == "alphavantage":
         api_key = st.session_state.get("global_provider_api_key", "")
         if api_key:
@@ -55,12 +59,19 @@ def get_global_provider_kwargs() -> dict:
 
 
 def get_gemini_api_key() -> str:
-    """Clave de Google AI Studio introducida por el usuario."""
-    return str(st.session_state.get("gemini_api_key", ""))
+    """Clave de Google AI Studio.
+
+    Delega en `app.credentials`, que busca en cascada:
+    secrets → env var → fichero local → campo manual.
+    """
+    from app.credentials import get_gemini_key
+
+    return get_gemini_key()
 
 
 def get_gemini_model() -> str:
-    """Nombre del modelo de Gemini elegido por el usuario."""
+    """Nombre del modelo de Gemini elegido por el usuario (por
+    defecto, el de `app.core.ai_report.DEFAULT_MODEL`)."""
     from app.core.ai_report import DEFAULT_MODEL
 
     return str(st.session_state.get("gemini_model", DEFAULT_MODEL))
