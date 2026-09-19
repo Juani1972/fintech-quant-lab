@@ -87,6 +87,11 @@ with st.sidebar:
                     st.success("Configuración cargada.")
                 st.rerun()
 
+    # Consumir (una sola vez) la marca que deja el buscador de main.py.
+    _last = st.session_state.pop("_last_searched_ticker", None)
+    if _last and _last in tickers:
+        st.session_state["riesgo_ticker"] = _last
+
     ticker = st.selectbox("Ticker", tickers, key="riesgo_ticker")
     confidence = st.slider("Nivel de confianza", 0.90, 0.99, 0.95, 0.01, key="riesgo_confidence")
     window = st.slider("Ventana VaR rodante", 50, 500, 250, key="riesgo_window")
@@ -106,7 +111,7 @@ ticker_badge(ticker)
 if run:
     with st.spinner("Descargando datos..."):
         try:
-            prices = load_prices(tickers, start, end, provider=provider, provider_kwargs=provider_kwargs)
+            prices = load_prices([ticker], start, end, provider=provider, provider_kwargs=provider_kwargs)
         except (ValueError, ConnectionError) as e:
             callout(f"Error al cargar datos: {e}", variant="danger")
             st.stop()

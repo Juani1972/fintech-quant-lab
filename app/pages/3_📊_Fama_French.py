@@ -80,6 +80,11 @@ with st.sidebar:
                     st.success("Configuración cargada.")
                 st.rerun()
 
+    # Consumir (una sola vez) la marca que deja el buscador de main.py.
+    _last = st.session_state.pop("_last_searched_ticker", None)
+    if _last and _last in tickers:
+        st.session_state["ff_ticker"] = _last
+
     ticker = st.selectbox("Ticker", tickers, key="ff_ticker")
     model = st.selectbox(
         "Modelo", ["3", "5"], format_func=lambda x: f"{x} factores", key="ff_model",
@@ -112,7 +117,7 @@ ticker_badge(ticker)
 if run:
     with st.spinner("Descargando datos del activo..."):
         try:
-            prices = load_prices(tickers, start, end, provider=provider, provider_kwargs=provider_kwargs)
+            prices = load_prices([ticker], start, end, provider=provider, provider_kwargs=provider_kwargs)
         except (ValueError, ConnectionError) as e:
             callout(f"Error al cargar datos: {e}", variant="danger")
             st.stop()

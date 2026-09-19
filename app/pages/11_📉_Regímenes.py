@@ -86,6 +86,11 @@ with st.sidebar:
                     st.success("Configuración cargada.")
                 st.rerun()
 
+    # Consumir (una sola vez) la marca que deja el buscador de main.py.
+    _last = st.session_state.pop("_last_searched_ticker", None)
+    if _last and _last in tickers:
+        st.session_state["regimenes_ticker"] = _last
+
     ticker = st.selectbox("Ticker", tickers, key="regimenes_ticker")
     n_states = st.slider(
         "Nº de regímenes", 2, 5, 2,

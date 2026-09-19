@@ -120,6 +120,14 @@ with st.sidebar:
             _apply_garch_config(_garch_loaded_named)
             st.rerun()
 
+    # Consumir (una sola vez) la marca que deja el buscador de main.py.
+    # Se hace ANTES de crear el selectbox -- es el único momento en el
+    # que Streamlit garantiza que escribir en session_state[widget_key]
+    # se refleja en el valor que devolverá el widget al script.
+    _last = st.session_state.pop("_last_searched_ticker", None)
+    if _last and _last in tickers:
+        st.session_state["garch_ticker"] = _last
+
     ticker = st.selectbox("Ticker a modelar", tickers, key="garch_ticker")
     p = st.slider(
         "Orden ARCH (p)", 1, 3, 1,
@@ -177,7 +185,7 @@ ticker_badge(ticker)
 if run:
     with st.spinner("Descargando datos..."):
         try:
-            prices = load_prices(tickers, start, end, provider=provider, provider_kwargs=provider_kwargs)
+            prices = load_prices([ticker], start, end, provider=provider, provider_kwargs=provider_kwargs)
         except (ValueError, ConnectionError) as e:
             callout(f"Error al cargar datos: {e}", variant="danger")
             st.stop()
