@@ -209,11 +209,75 @@ with st.sidebar:
 
     # --- Informes con IA ---
     with st.expander("🤖 Informes con IA (Google Gemini)"):
-        st.text_input(
-            "API key de Google AI Studio", type="password",
-            key="gemini_api_key",
+        from app.credentials import (
+            delete_gemini_key_from_file,
+            get_gemini_key_with_source,
+            has_file_key,
+            save_gemini_key_to_file,
         )
-        st.text_input("Modelo", key="gemini_model")
+
+        st.caption(
+            "Opcional. La app busca la clave en este orden: "
+            "secretos de Streamlit → variable de entorno `GEMINI_API_KEY` "
+            "→ fichero local → campo de abajo."
+        )
+
+        _key, _source = get_gemini_key_with_source()
+        _source_label = {
+            "secrets": "🔐 Streamlit secrets (.streamlit/secrets.toml)",
+            "env": "🌍 Variable de entorno GEMINI_API_KEY",
+            "fichero": "💾 Fichero local data/credentials.json",
+            "manual": "✍️ Introducida en esta sesión",
+            "ninguna": "❌ Ninguna (la IA está desactivada)",
+        }[_source]
+        st.caption(f"**Fuente activa:** {_source_label}")
+
+        manual_key = st.text_input(
+            "API key de Google AI Studio",
+            type="password",
+            key="gemini_api_key",
+            help=(
+                "Gratis en aistudio.google.com/apikey, sin tarjeta. "
+                "Nivel gratuito: hasta 250 peticiones/día según el modelo."
+            ),
+            disabled=_source in ("secrets", "env", "fichero"),
+        )
+
+        col_save, col_clear = st.columns(2)
+        with col_save:
+            if st.button(
+                "💾 Guardar en fichero local",
+                use_container_width=True,
+                disabled=not manual_key or _source in ("secrets", "env", "fichero"),
+                help=(
+                    "Guarda la clave en data/credentials.json para no "
+                    "tener que pegarla en cada arranque. Es texto plano: "
+                    "asegúrate de añadir esa ruta a tu .gitignore."
+                ),
+            ):
+                save_gemini_key_to_file(manual_key)
+                st.success("Clave guardada en data/credentials.json.")
+                st.rerun()
+        with col_clear:
+            if st.button(
+                "🗑️ Borrar clave guardada",
+                use_container_width=True,
+                disabled=not has_file_key(),
+                help="Borra la clave guardada en data/credentials.json.",
+            ):
+                delete_gemini_key_from_file()
+                st.success("Clave borrada del fichero local.")
+                st.rerun()
+
+        st.text_input(
+            "Modelo", key="gemini_model",
+            help=(
+                "Los nombres y niveles gratuitos de los modelos de "
+                "Gemini cambian con cierta frecuencia -- si el modelo "
+                "por defecto deja de funcionar, consulta "
+                "aistudio.google.com para ver el nombre vigente."
+            ),
+        )
 
     st.divider()
 
