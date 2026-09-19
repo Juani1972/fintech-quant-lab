@@ -19,3 +19,7 @@ data/*.parquet
 # Base de datos local de histórico
 data/*.db
 data/*.db-journal
+# Credenciales locales (NUNCA subir al repo)
+.streamlit/secrets.toml
+data/credentials.json
+.env
