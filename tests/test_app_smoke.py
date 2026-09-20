@@ -67,6 +67,41 @@ def test_apply_tickers_does_not_revert_universe_selection():
     assert at.session_state["global_tickers"] == after_select
 
 
+def test_close_app_button_shows_closing_screen_without_rest_of_page():
+    """Regresión: pulsar "Cerrar aplicación" mataba el proceso en el
+    acto (misma ejecución del script) -- el aviso apenas llegaba a
+    verse y el resto de la página (sidebar, botones...) seguía
+    renderizada debajo, dando la sensación de que la app se había
+    quedado colgada en vez de haberse cerrado. Ahora el botón solo
+    marca `_app_closing` y el kill real (con un pequeño retardo) pasa
+    en el siguiente rerun, que muestra una pantalla de cierre limpia
+    y corta con `st.stop()` antes de llegar al resto de la página."""
+    from unittest.mock import patch
+
+    with patch("threading.Timer") as mock_timer:
+        at = AppTest.from_file(str(APP_DIR / "main.py"), default_timeout=30)
+        at.run()
+
+        close_button = next(
+            b for b in at.button if "Cerrar aplicación" in (b.label or "")
+        )
+        at = close_button.click().run()
+
+        assert not at.exception
+        assert at.session_state["_app_closing"] is True
+        assert any(
+            "se ha cerrado" in (m.value or "") for m in at.markdown
+        )
+        # El resto de la página (sidebar, botones normales) no debe
+        # haberse renderizado en este rerun -- st.stop() cortó antes.
+        assert len(at.sidebar.text_input) == 0
+
+    # El kill real está programado con retardo, no se ejecuta en el acto.
+    assert mock_timer.called
+    delay = mock_timer.call_args.args[0]
+    assert delay > 0
+
+
 def test_all_pages_compile_and_have_setup():
     """Cada página debe llamar a page_setup() al inicio."""
     pages_dir = APP_DIR / "pages"
