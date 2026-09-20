@@ -357,6 +357,62 @@ def test_gemini_manual_key_persists_across_page_navigation():
     assert at.session_state.get("gemini_api_key_manual") == "FAKE-TEST-KEY-12345"
 
 
+def test_ai_provider_and_groq_key_persist_across_page_navigation():
+    """Regresión (misma clase de bug que la Gemini de arriba, ver
+    _on_ai_provider_change / _on_groq_key_change en main.py): tanto
+    el proveedor elegido como la clave de Groq deben sobrevivir a la
+    navegación entre páginas."""
+    at = AppTest.from_file(str(APP_DIR / "main.py"), default_timeout=30)
+    at.run()
+    assert at.session_state.get("ai_provider") == "gemini"
+
+    provider_select = next(
+        w for w in at.sidebar.selectbox if w.key == "_ai_provider_select"
+    )
+    at = provider_select.select("groq").run()
+    assert at.session_state.get("ai_provider") == "groq"
+
+    key_input = next(
+        w for w in at.sidebar.text_input if w.label == "API key de Groq"
+    )
+    at = key_input.set_value("FAKE-GROQ-KEY").run()
+    assert at.session_state.get("groq_api_key_manual") == "FAKE-GROQ-KEY"
+
+    at.switch_page(str(APP_DIR / "pages" / "1_📈_GARCH.py")).run()
+    assert not at.exception
+    assert at.session_state.get("ai_provider") == "groq"
+    assert at.session_state.get("groq_api_key_manual") == "FAKE-GROQ-KEY"
+
+
+def test_list_groq_models_button_shows_results():
+    """Igual que test_list_gemini_models_button_shows_results, para
+    Groq -- confirma que el selector de proveedor también controla
+    qué sección de "ver modelos disponibles" se usa."""
+    from unittest.mock import patch
+
+    at = AppTest.from_file(str(APP_DIR / "main.py"), default_timeout=30)
+    at.session_state["ai_provider"] = "groq"
+    at.session_state["groq_api_key_manual"] = "FAKE-GROQ-KEY"
+    at.run()
+
+    list_button = next(
+        b for b in at.sidebar.button if "Ver modelos disponibles" in (b.label or "")
+    )
+    assert not list_button.disabled
+
+    with patch(
+        "app.core.groq_report.list_available_models",
+        return_value=["gemma2-9b-it", "llama-3.3-70b-versatile"],
+    ):
+        at = list_button.click().run()
+
+    assert not at.exception
+    assert at.session_state["_groq_models_list"] == ["gemma2-9b-it", "llama-3.3-70b-versatile"]
+    assert any(
+        "llama-3.3-70b-versatile" in (c.value or "") for c in at.sidebar.code
+    )
+
+
 def test_garch_ai_report_button_does_not_reset_results():
     """Regresión: dentro de la sección de resultados de GARCH, `run`
     (el botón "Ejecutar GARCH") solo es True en el rerun donde se
@@ -435,6 +491,48 @@ def test_backtest_ai_report_button_does_not_reset_results():
             "Los resultados del backtest desaparecieron al generar el informe con IA"
         )
         assert at.session_state.get("bt_ai_report") == "## Informe\nContenido."
+
+
+def test_garch_ai_report_with_groq_provider_does_not_reset_results():
+    """Igual que test_garch_ai_report_button_does_not_reset_results,
+    pero con Groq como proveedor elegido -- confirma que el despacho
+    de app.state.generate_ai_report() al backend correcto tampoco
+    rompe la persistencia de resultados."""
+    from unittest.mock import patch
+
+    import numpy as np
+    import pandas as pd
+
+    idx = pd.bdate_range("2023-01-01", "2024-12-31")
+    rng = np.random.default_rng(7)
+    prices = pd.DataFrame(
+        {"AAA": 100 * np.exp(np.cumsum(rng.normal(0, 0.01, len(idx))))}, index=idx,
+    )
+
+    with patch("app.core.data_loader.load_prices", return_value=prices):
+        at = AppTest.from_file(str(APP_DIR / "pages" / "1_📈_GARCH.py"), default_timeout=30)
+        at.session_state["global_tickers"] = "AAA"
+        at.session_state["ai_provider"] = "groq"
+        at.session_state["groq_api_key_manual"] = "FAKE-GROQ-KEY"
+        at.run()
+
+        run_button = next(b for b in at.sidebar.button if "Ejecutar GARCH" in (b.label or ""))
+        at = run_button.click().run()
+        assert not at.exception
+        assert any("AIC" in (m.label or "") for m in at.metric)
+
+        ai_button = next(b for b in at.button if "Generar informe con IA" in (b.label or ""))
+        with patch(
+            "app.core.groq_report.generate_report", return_value="## Informe de Groq\nContenido.",
+        ) as mock_gen:
+            at = ai_button.click().run()
+
+        assert not at.exception
+        assert any("AIC" in (m.label or "") for m in at.metric), (
+            "Los resultados de GARCH desaparecieron al generar el informe con IA (Groq)"
+        )
+        assert at.session_state.get("garch_ai_report") == "## Informe de Groq\nContenido."
+        assert mock_gen.call_args.kwargs["api_key"] == "FAKE-GROQ-KEY"
 
 
 def test_garch_page_config_upload_applies_valid_values():

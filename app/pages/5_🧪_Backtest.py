@@ -6,7 +6,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from app.core.ai_report import AIReportError, generate_report
+from app.core.ai_report import AIReportError
 from app.core.alerts import AlertDispatcher, check_backtest_rules
 from app.core.backtest import (
     BacktestMode,
@@ -29,8 +29,8 @@ from app.core.history import init_db, save_run
 from app.core.report import build_ai_report_pdf, build_backtest_report
 from app.state import (
     ensure_session_initialized,
-    get_gemini_api_key,
-    get_gemini_model,
+    generate_ai_report,
+    get_ai_api_key,
     get_global_params,
     get_global_provider,
     get_global_provider_kwargs,
@@ -440,12 +440,13 @@ if st.session_state.get("bt_has_run"):
     conclusion(conclusion_text, variant=conclusion_variant)
 
     section("🤖 Informe con IA")
-    gemini_key = get_gemini_api_key()
-    if not gemini_key:
+    ai_key = get_ai_api_key()
+    if not ai_key:
         callout(
-            "Configura tu clave gratuita de Google AI Studio en la barra "
-            "lateral de la portada ('🤖 Informes con IA') para generar un "
-            "informe más completo, interpretando estos resultados con IA.",
+            "Configura tu clave gratuita de IA (Gemini o Groq) en la "
+            "barra lateral de la portada ('🤖 Informes con IA') para "
+            "generar un informe más completo, interpretando estos "
+            "resultados con IA.",
             variant="info",
         )
     else:
@@ -467,9 +468,7 @@ if st.session_state.get("bt_has_run"):
             )
             with st.spinner("Generando informe con IA..."):
                 try:
-                    st.session_state["bt_ai_report"] = generate_report(
-                        ai_prompt, api_key=gemini_key, model=get_gemini_model(),
-                    )
+                    st.session_state["bt_ai_report"] = generate_ai_report(ai_prompt)
                 except AIReportError as e:
                     st.session_state["bt_ai_report"] = None
                     st.error(f"No se pudo generar el informe: {e}")

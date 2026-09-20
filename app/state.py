@@ -8,8 +8,9 @@ a través del campo de texto de la barra lateral. `state.py` solo se
 encarga de que la clave exista (aunque sea vacía) para que las páginas
 no revienten si se navega directamente por URL sin pasar por la portada.
 
-La clave de Gemini se resuelve con cascada en `app.credentials`:
-secrets → env var → fichero local → campo manual de la barra lateral.
+La clave del proveedor de IA elegido (Gemini o Groq) se resuelve con
+cascada en `app.credentials`: secrets → env var → fichero local →
+campo manual de la barra lateral.
 """
 from __future__ import annotations
 
@@ -77,6 +78,52 @@ def get_gemini_model() -> str:
     return str(st.session_state.get("gemini_model", DEFAULT_MODEL))
 
 
+def get_ai_provider() -> str:
+    """Proveedor de IA elegido para los informes: 'gemini' o 'groq'
+    (por defecto 'gemini'). Se elige en la barra lateral de la
+    portada -- ver también get_ai_api_key/get_ai_model/generate_ai_report."""
+    return str(st.session_state.get("ai_provider", "gemini"))
+
+
+def get_ai_api_key() -> str:
+    """Clave del proveedor de IA actualmente seleccionado."""
+    from app.credentials import get_gemini_key, get_groq_key
+
+    if get_ai_provider() == "groq":
+        return get_groq_key()
+    return get_gemini_key()
+
+
+def get_ai_model() -> str:
+    """Modelo del proveedor de IA actualmente seleccionado."""
+    if get_ai_provider() == "groq":
+        from app.core.groq_report import DEFAULT_MODEL as DEFAULT_GROQ_MODEL
+
+        return str(st.session_state.get("groq_model", DEFAULT_GROQ_MODEL))
+    return get_gemini_model()
+
+
+def generate_ai_report(prompt: str, temperature: float = 0.3) -> str:
+    """Genera un informe con el proveedor de IA actualmente
+    seleccionado (Gemini o Groq).
+
+    Centraliza aquí el despacho entre los dos backends -- así las
+    páginas (GARCH, Backtest...) no tienen que repetir cada una su
+    propia lógica de "qué backend llamar según lo elegido en la
+    portada"; solo llaman a esta función y capturan
+    `app.core.ai_report.AIReportError` (la misma clase la usan ambos
+    backends).
+    """
+    if get_ai_provider() == "groq":
+        from app.core.groq_report import generate_report as backend_generate_report
+    else:
+        from app.core.ai_report import generate_report as backend_generate_report
+
+    return backend_generate_report(
+        prompt, api_key=get_ai_api_key(), model=get_ai_model(), temperature=temperature,
+    )
+
+
 def ensure_session_initialized() -> None:
     """Inicializa las claves de sesión si no existen.
 
@@ -100,3 +147,8 @@ def ensure_session_initialized() -> None:
     if "gemini_model" not in st.session_state:
         from app.core.ai_report import DEFAULT_MODEL
         st.session_state["gemini_model"] = DEFAULT_MODEL
+    if "groq_model" not in st.session_state:
+        from app.core.groq_report import DEFAULT_MODEL as DEFAULT_GROQ_MODEL
+        st.session_state["groq_model"] = DEFAULT_GROQ_MODEL
+    if "ai_provider" not in st.session_state:
+        st.session_state["ai_provider"] = "gemini"

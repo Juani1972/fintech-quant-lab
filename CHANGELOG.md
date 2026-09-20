@@ -16,6 +16,21 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/lang/es/).
   Gemini (GARCH, Backtest), botón para descargarlo en PDF con el
   mismo lenguaje visual que los informes HTML existentes
   (`build_ai_report_pdf` en `app/core/report.py`).
+- **Ver modelos disponibles**: botón en la barra lateral que consulta
+  a la API del proveedor de IA elegido qué modelos admite la clave
+  ahora mismo -- los modelos gratuitos cambian con el tiempo (Google
+  retira los suyos de vez en cuando) y así no hace falta esperar a
+  una actualización del código para saber cuál usar.
+- **Groq como alternativa a Gemini**: segundo proveedor de IA para
+  los informes (`app/core/groq_report.py`), con la misma clave
+  gratuita sin tarjeta y el mismo flujo que Gemini. Selector de
+  proveedor en la barra lateral ('🤖 Informes con IA'); cada uno
+  guarda su propia clave y modelo por separado, así que cambiar de
+  uno a otro no pierde la configuración del primero.
+- **Reintentos automáticos en Gemini/Groq**: los errores 500/503
+  (sobrecarga temporal del modelo gratuito) se reintentan solos con
+  espera creciente (2s/4s/8s) antes de propagar el error -- suelen
+  resolverse sin intervención del usuario.
 
 ### Fixed
 - **Sidebar**: elegir un universo predefinido o una empresa por el
@@ -23,6 +38,12 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/lang/es/).
   formulario de tickers -- al pulsar "✅ Aplicar tickers" ese campo,
   con el valor viejo, sobrescribía el cambio recién hecho y revertía
   la selección.
+- **Informe con IA**: la clave de Gemini pegada en la portada no se
+  veía desde GARCH/Backtest (Streamlit borra el session_state de un
+  widget en cualquier página donde no se vuelva a crear), y pulsar
+  "Generar informe con IA" reiniciaba toda la sección de resultados
+  de la página (el botón "Ejecutar GARCH/backtest" solo es `True` en
+  su propio rerun).
 
 ### Planned
 - Despliegue público en Streamlit Cloud.
