@@ -79,7 +79,13 @@ def get_gemini_key_with_source() -> tuple[str, str]:
     if key:
         return key, "fichero"
 
-    key = st.session_state.get("gemini_api_key", "")
+    # "gemini_api_key_manual" -- no el key= del widget en sí (ver
+    # _on_gemini_key_change en app/main.py): Streamlit borra el
+    # session_state de un widget en cualquier página donde ese widget
+    # no se vuelva a crear, así que leer directamente el key= del
+    # campo hacía "desaparecer" la clave en cuanto se navegaba fuera
+    # de la portada.
+    key = st.session_state.get("gemini_api_key_manual", "")
     if key:
         return key, "manual"
 

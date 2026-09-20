@@ -183,7 +183,17 @@ with st.sidebar:
 
 ticker_badge(ticker)
 
+# `run` solo es True en el rerun exacto donde se pulsó "Ejecutar
+# GARCH" -- cualquier otro botón de esta sección (informe con IA,
+# descargar PDF/CSV...) dispara su propio rerun, en el que `run`
+# vuelve a ser False. Sin esta bandera persistente, todo este bloque
+# desaparecía y la página volvía al aviso "Configura los parámetros"
+# en cuanto se tocaba cualquier otro botón, perdiendo el ajuste ya
+# calculado.
 if run:
+    st.session_state["garch_has_run"] = True
+
+if st.session_state.get("garch_has_run"):
     with st.spinner("Descargando datos..."):
         try:
             prices = load_prices([ticker], start, end, provider=provider, provider_kwargs=provider_kwargs)

@@ -359,7 +359,17 @@ ticker_badge(ticker_a, ticker_b)
 # ============================================================
 #  Ejecución
 # ============================================================
+# `run` solo es True en el rerun exacto donde se pulsó "Ejecutar
+# backtest" -- cualquier otro botón de esta sección (informe con IA,
+# descargar PDF/HTML, guardar experimento...) dispara su propio
+# rerun, en el que `run` vuelve a ser False. Sin esta bandera
+# persistente, todo este bloque desaparecía y la página volvía al
+# aviso "Configura los parámetros" en cuanto se tocaba cualquier otro
+# botón, perdiendo el backtest ya calculado.
 if run:
+    st.session_state["bt_has_run"] = True
+
+if st.session_state.get("bt_has_run"):
     with st.spinner("Descargando datos..."):
         try:
             prices = load_prices(tickers, start, end, provider=provider, provider_kwargs=provider_kwargs)

@@ -132,6 +132,21 @@ def _on_close_app_click() -> None:
     st.session_state["_app_closing"] = True
 
 
+def _on_gemini_key_change() -> None:
+    """Copia el valor del campo a `gemini_api_key_manual` -- una clave
+    "normal" de session_state, no atada a ningún widget.
+
+    Streamlit borra el session_state de un widget en cualquier página
+    donde ese widget no se vuelva a crear (p.ej. este campo solo
+    existe en la portada). Si `app.credentials` leyera directamente
+    la clave del widget, la clave de Gemini "desaparecía" en cuanto
+    se navegaba a GARCH o Backtest -- el mismo problema que ya se
+    arregló para `global_tickers` frente a `_tickers_form_input`."""
+    st.session_state["gemini_api_key_manual"] = st.session_state.get(
+        "_gemini_api_key_input", ""
+    )
+
+
 # ============================================================
 #  Sidebar: parámetros globales
 # ============================================================
@@ -278,7 +293,9 @@ with st.sidebar:
         manual_key = st.text_input(
             "API key de Google AI Studio",
             type="password",
-            key="gemini_api_key",
+            value=st.session_state.get("gemini_api_key_manual", ""),
+            key="_gemini_api_key_input",
+            on_change=_on_gemini_key_change,
             help=(
                 "Gratis en aistudio.google.com/apikey, sin tarjeta. "
                 "Nivel gratuito: hasta 250 peticiones/día según el modelo."
