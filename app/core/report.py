@@ -471,22 +471,17 @@ def _register_unicode_font(pdf: FPDF) -> str:
     return "DejaVu"
 
 
-def build_ai_report_pdf(
+def _write_report_pdf(
     title: str,
     meta: dict[str, Any],
-    report_text: str,
+    markdown_body: str,
+    disclaimer: str,
 ) -> bytes:
-    """Construye un PDF del informe generado con IA (Gemini), con el
-    mismo lenguaje visual que los informes HTML (cabecera azul,
-    metadatos, disclaimer).
-
-    Args:
-        title: título del informe (p.ej. "Informe con IA — GARCH").
-        meta: metadatos a mostrar (ticker, parámetros del modelo...).
-        report_text: texto en markdown devuelto por Gemini.
-
-    Returns:
-        Contenido del PDF como bytes, listo para `st.download_button`.
+    """Construye el PDF compartido por `build_ai_report_pdf` y
+    `build_interpretation_pdf`: cabecera azul, metadatos, cuerpo en
+    markdown y disclaimer, con el mismo lenguaje visual que los
+    informes HTML. Factorizado aquí para no duplicar el boilerplate
+    de fpdf2 entre ambos.
     """
     pdf = FPDF(format="A4")
     pdf.set_auto_page_break(auto=True, margin=20)
@@ -515,7 +510,7 @@ def build_ai_report_pdf(
     pdf.set_text_color(*_PDF_INK)
     heading_style = TextStyle(font_family=font, font_style="B", color=_PDF_BLUE)
     pdf.write_html(
-        _markdown.markdown(report_text),
+        _markdown.markdown(markdown_body),
         font_family=font,
         li_prefix_color=_PDF_INK,
         tag_styles={
@@ -527,17 +522,78 @@ def build_ai_report_pdf(
 
     pdf.set_font(font, "I", 8)
     pdf.set_text_color(*_PDF_AMBER)
-    pdf.multi_cell(
-        0, 5,
-        "Disclaimer: este informe combina cálculos de la app con texto "
-        "generado por un modelo de IA a partir de esos cálculos. Es "
-        "educativo y de investigación, no constituye "
-        "asesoramiento financiero. Verifica siempre los datos antes de "
-        "cualquier uso real.",
-        new_x=XPos.LMARGIN, new_y=YPos.NEXT,
-    )
+    pdf.multi_cell(0, 5, disclaimer, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     return bytes(pdf.output())
+
+
+def build_ai_report_pdf(
+    title: str,
+    meta: dict[str, Any],
+    report_text: str,
+) -> bytes:
+    """Construye un PDF del informe generado con IA (Gemini o Groq), con
+    el mismo lenguaje visual que los informes HTML (cabecera azul,
+    metadatos, disclaimer).
+
+    Args:
+        title: título del informe (p.ej. "Informe con IA — GARCH").
+        meta: metadatos a mostrar (ticker, parámetros del modelo...).
+        report_text: texto en markdown devuelto por el proveedor de IA.
+
+    Returns:
+        Contenido del PDF como bytes, listo para `st.download_button`.
+    """
+    return _write_report_pdf(
+        title, meta, report_text,
+        disclaimer=(
+            "Disclaimer: este informe combina cálculos de la app con texto "
+            "generado por un modelo de IA a partir de esos cálculos. Es "
+            "educativo y de investigación, no constituye "
+            "asesoramiento financiero. Verifica siempre los datos antes de "
+            "cualquier uso real."
+        ),
+    )
+
+
+def build_interpretation_pdf(
+    title: str,
+    meta: dict[str, Any],
+    bullets: list[str],
+    ai_text: str | None = None,
+) -> bytes:
+    """Construye un PDF con la interpretación determinista de un
+    resultado (reglas fijas, sin IA, siempre disponible) y, si el
+    usuario la generó, la ampliación narrativa con IA a continuación.
+
+    Args:
+        title: título del informe (p.ej. "Interpretación — GARCH").
+        meta: metadatos a mostrar (ticker, parámetros...).
+        bullets: puntos de la interpretación determinista (uno por línea).
+        ai_text: ampliación generada con IA, o None si no se generó.
+
+    Returns:
+        Contenido del PDF como bytes, listo para `st.download_button`.
+    """
+    body = (
+        "\n".join(f"- {b}" for b in bullets) if bullets
+        else "No hay suficientes datos para interpretar automáticamente este resultado."
+    )
+    if ai_text:
+        body += "\n\n## Ampliación con IA\n\n" + ai_text
+
+    disclaimer = (
+        "Disclaimer: la interpretación automática se genera con reglas "
+        "fijas a partir de los cálculos de la app, sin IA. "
+        + (
+            "La sección 'Ampliación con IA' añade texto generado por un "
+            "modelo de IA a partir de esos mismos cálculos. "
+            if ai_text else ""
+        )
+        + "Es educativo y de investigación, no constituye asesoramiento "
+        "financiero. Verifica siempre los datos antes de cualquier uso real."
+    )
+    return _write_report_pdf(title, meta, body, disclaimer)
 
 
 def build_walkforward_report(

@@ -8,6 +8,19 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 ## [Unreleased]
 
 ### Added
+- **Interpretación automática de resultados (sin IA, en lenguaje
+  llano)**: las 8 páginas del núcleo cuantitativo (GARCH,
+  Cointegración, Fama-French, Riesgo, Backtest, Walk-Forward,
+  Optimización, Robustez) muestran ahora una sección "📝
+  Interpretación" con reglas fijas que traducen cada métrica a
+  español sin jerga estadística (sin nombrar "p-valor", "Sharpe",
+  "ADF"...), pensada para alguien sin formación técnica --
+  instantánea, gratuita y sin necesidad de configurar ninguna clave
+  de IA (`app/core/interpretation/`). La ampliación narrativa con IA
+  (Gemini/Groq) pasa a ser una capa opcional encima de esa base, no
+  un requisito para tener un informe, con descarga en PDF de lo que
+  haya en pantalla (`app/report_ui.py`, `build_interpretation_pdf`
+  en `app/core/report.py`).
 - **Informes con IA (Google Gemini)**: nuevas páginas GARCH y Backtest
   pueden generar un informe interpretando los resultados con Gemini
   (`app/core/ai_report.py`), con gestión de credenciales en cascada

@@ -5,6 +5,8 @@ import streamlit as st
 
 from app.core.data_loader import compute_log_returns, load_prices
 from app.core.fama_french import load_factors, run_regression
+from app.core.interpretation import interpret_fama_french
+from app.report_ui import render_interpretation_section
 from app.state import (
     ensure_session_initialized,
     get_global_params,
@@ -173,6 +175,31 @@ if run:
     betas_df["t-stat"] = result.betas_tstats
     betas_df["p-valor"] = result.betas_pvalues
     st.dataframe(betas_df, use_container_width=True)
+
+    ff_bullets = interpret_fama_french(result)
+    render_interpretation_section(
+        title="📝 Interpretación",
+        bullets=ff_bullets,
+        ai_prompt=(
+            "Eres un analista cuantitativo. Te doy el resultado de una "
+            f"regresión Fama-French de {model} factores sobre {ticker}, "
+            "junto con una interpretación automática ya generada por "
+            "reglas fijas (sin IA). Escribe una ampliación breve (unas 300 "
+            "palabras) en español, en tono profesional pero accesible "
+            "para alguien sin formación financiera avanzada, que la "
+            "desarrolle sin repetirla literalmente. No inventes datos que "
+            "no se te han dado.\n\n"
+            f"Alpha: {result.alpha:.4%} (p={result.alpha_pvalue:.4f}), "
+            f"R²={result.r_squared:.3f}, N={result.n_obs}\n"
+            f"Betas: {result.betas.to_dict()}\n\n"
+            "Interpretación punto a punto ya generada por la app:\n"
+            + "\n".join(f"- {b}" for b in ff_bullets)
+        ),
+        state_key="ff_ai_report",
+        pdf_title="Interpretación — Fama-French",
+        pdf_filename=f"interpretacion_famafrench_{ticker}.pdf",
+        pdf_meta={"Ticker": ticker, "Modelo": f"{model} factores", "Errores": cov_type},
+    )
 
     with st.expander("📋 Resumen completo"):
         st.text(result.summary)

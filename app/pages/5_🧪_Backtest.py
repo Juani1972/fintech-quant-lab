@@ -6,7 +6,6 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from app.core.ai_report import AIReportError
 from app.core.alerts import AlertDispatcher, check_backtest_rules
 from app.core.backtest import (
     BacktestMode,
@@ -26,11 +25,11 @@ from app.core.cointegration import (
 from app.core.data_loader import load_prices
 from app.core.experiments import ExperimentError, save_experiment
 from app.core.history import init_db, save_run
-from app.core.report import build_ai_report_pdf, build_backtest_report
+from app.core.interpretation import interpret_backtest
+from app.core.report import build_backtest_report
+from app.report_ui import render_interpretation_section
 from app.state import (
     ensure_session_initialized,
-    generate_ai_report,
-    get_ai_api_key,
     get_global_params,
     get_global_provider,
     get_global_provider_kwargs,
@@ -439,56 +438,34 @@ if st.session_state.get("bt_has_run"):
     conclusion_text, conclusion_variant = plain_language_summary(result)
     conclusion(conclusion_text, variant=conclusion_variant)
 
-    section("🤖 Informe con IA")
-    ai_key = get_ai_api_key()
-    if not ai_key:
-        callout(
-            "Configura tu clave gratuita de IA (Gemini o Groq) en la "
-            "barra lateral de la portada ('🤖 Informes con IA') para "
-            "generar un informe más completo, interpretando estos "
-            "resultados con IA.",
-            variant="info",
-        )
-    else:
-        if st.button("🤖 Generar informe con IA"):
-            ai_prompt = (
-                "Eres un analista cuantitativo. Te doy los resultados de un "
-                f"backtest de una estrategia de trading ({strategy}) sobre "
-                f"{ticker_a}" + (f" y {ticker_b}" if ticker_b else "") + ", "
-                f"del {start} al {end}. Escribe un informe breve (unas 300 "
-                "palabras) en español, en tono profesional pero accesible "
-                "para alguien sin formación financiera avanzada. Interpreta "
-                "qué significan estos números en la práctica, si el "
-                "resultado parece fiable dado el número de operaciones, y "
-                "qué riesgos o matices debería tener en cuenta antes de "
-                "operar con esta estrategia. No inventes datos que no se "
-                "te han dado.\n\n"
-                f"Métricas: {json.dumps({k: (round(v, 4) if isinstance(v, float) else v) for k, v in result.metrics.items()}, ensure_ascii=False)}\n\n"
-                f"Conclusión automática ya generada por la app: {conclusion_text}"
-            )
-            with st.spinner("Generando informe con IA..."):
-                try:
-                    st.session_state["bt_ai_report"] = generate_ai_report(ai_prompt)
-                except AIReportError as e:
-                    st.session_state["bt_ai_report"] = None
-                    st.error(f"No se pudo generar el informe: {e}")
-
-        if st.session_state.get("bt_ai_report"):
-            st.markdown(st.session_state["bt_ai_report"])
-            st.download_button(
-                "📄 Descargar informe en PDF",
-                build_ai_report_pdf(
-                    title="Informe con IA — Backtest",
-                    meta={
-                        "Estrategia": strategy,
-                        "Tickers": ticker_a + (f", {ticker_b}" if ticker_b else ""),
-                        "Periodo": f"{start} a {end}",
-                    },
-                    report_text=st.session_state["bt_ai_report"],
-                ),
-                file_name=f"informe_ia_backtest_{strategy.replace(' ', '_').lower()}.pdf",
-                mime="application/pdf",
-            )
+    bt_bullets = interpret_backtest(result)
+    render_interpretation_section(
+        title="📝 Interpretación",
+        bullets=bt_bullets,
+        ai_prompt=(
+            "Eres un analista cuantitativo. Te doy los resultados de un "
+            f"backtest de una estrategia de trading ({strategy}) sobre "
+            f"{ticker_a}" + (f" y {ticker_b}" if ticker_b else "") + ", "
+            f"del {start} al {end}, junto con una interpretación "
+            "automática ya generada por reglas fijas (sin IA). Escribe "
+            "una ampliación breve (unas 300 palabras) en español, en tono "
+            "profesional pero accesible para alguien sin formación "
+            "financiera avanzada, que la desarrolle sin repetirla "
+            "literalmente. No inventes datos que no se te han dado.\n\n"
+            f"Métricas: {json.dumps({k: (round(v, 4) if isinstance(v, float) else v) for k, v in result.metrics.items()}, ensure_ascii=False)}\n\n"
+            f"Conclusión automática: {conclusion_text}\n"
+            "Interpretación punto a punto ya generada por la app:\n"
+            + "\n".join(f"- {b}" for b in bt_bullets)
+        ),
+        state_key="bt_ai_report",
+        pdf_title="Interpretación — Backtest",
+        pdf_filename=f"interpretacion_backtest_{strategy.replace(' ', '_').lower()}.pdf",
+        pdf_meta={
+            "Estrategia": strategy,
+            "Tickers": ticker_a + (f", {ticker_b}" if ticker_b else ""),
+            "Periodo": f"{start} a {end}",
+        },
+    )
 
     section("📈 Curva de capital")
     bh = buy_and_hold(benchmark_prices, initial_capital=initial_capital)

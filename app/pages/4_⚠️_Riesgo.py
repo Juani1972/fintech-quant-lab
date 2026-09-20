@@ -5,6 +5,7 @@ import streamlit as st
 
 from app.core.data_loader import compute_log_returns, load_prices
 from app.core.garch import fit_garch, forecast_volatility
+from app.core.interpretation import interpret_risk
 from app.core.plotting import drawdown_chart, line_chart
 from app.core.risk import (
     calmar_ratio,
@@ -20,6 +21,7 @@ from app.core.risk import (
     value_at_risk_filtered_historical,
     value_at_risk_parametric,
 )
+from app.report_ui import render_interpretation_section
 from app.state import (
     ensure_session_initialized,
     get_global_params,
@@ -120,18 +122,21 @@ if run:
     returns = compute_log_returns(prices)[ticker]
 
     section("📉 VaR y Expected Shortfall")
+    var_hist = value_at_risk(returns, confidence)
+    var_param = value_at_risk_parametric(returns, confidence)
+    var_cf = value_at_risk_cornish_fisher(returns, confidence)
+    es_hist = expected_shortfall(returns, confidence)
+    es_param = expected_shortfall_parametric(returns, confidence)
+
     c1, c2, c3, c4, c5, c6 = st.columns(6)
-    c1.metric(f"VaR hist. {confidence:.0%}", f"{value_at_risk(returns, confidence):.4%}")
-    c2.metric(
-        f"VaR param. {confidence:.0%}",
-        f"{value_at_risk_parametric(returns, confidence):.4%}",
-    )
+    c1.metric(f"VaR hist. {confidence:.0%}", f"{var_hist:.4%}")
+    c2.metric(f"VaR param. {confidence:.0%}", f"{var_param:.4%}")
     c3.metric(
-        f"VaR Cornish-Fisher {confidence:.0%}",
-        f"{value_at_risk_cornish_fisher(returns, confidence):.4%}",
+        f"VaR Cornish-Fisher {confidence:.0%}", f"{var_cf:.4%}",
         help="VaR paramétrico ajustado por la asimetría y curtosis "
              "reales de los retornos, en vez de asumir normalidad pura.",
     )
+    var_fhs: float | None
     try:
         garch_result = fit_garch(returns)
         forecast_vol = float(forecast_volatility(garch_result, horizon=1).iloc[0])
@@ -146,19 +151,48 @@ if run:
                  "igual al promedio de todo el histórico.",
         )
     except Exception as e:
+        var_fhs = None
         c4.metric(f"VaR filtrado (GARCH) {confidence:.0%}", "—", help=str(e))
-    c5.metric(f"ES hist. {confidence:.0%}", f"{expected_shortfall(returns, confidence):.4%}")
-    c6.metric(
-        f"ES param. {confidence:.0%}",
-        f"{expected_shortfall_parametric(returns, confidence):.4%}",
-    )
+    c5.metric(f"ES hist. {confidence:.0%}", f"{es_hist:.4%}")
+    c6.metric(f"ES param. {confidence:.0%}", f"{es_param:.4%}")
 
     section("📊 Ratios ajustados por riesgo")
+    sharpe = sharpe_ratio(returns, periods_per_year=252)
+    sortino = sortino_ratio(returns, periods_per_year=252)
+    calmar = calmar_ratio(returns, periods_per_year=252)
+    max_dd = max_drawdown(prices[ticker])
     r1, r2, r3, r4 = st.columns(4)
-    r1.metric("Sharpe", f"{sharpe_ratio(returns, periods_per_year=252):.3f}")
-    r2.metric("Sortino", f"{sortino_ratio(returns, periods_per_year=252):.3f}")
-    r3.metric("Calmar", f"{calmar_ratio(returns, periods_per_year=252):.3f}")
-    r4.metric("Max Drawdown", f"{max_drawdown(prices[ticker]):.2%}")
+    r1.metric("Sharpe", f"{sharpe:.3f}")
+    r2.metric("Sortino", f"{sortino:.3f}")
+    r3.metric("Calmar", f"{calmar:.3f}")
+    r4.metric("Max Drawdown", f"{max_dd:.2%}")
+
+    risk_metrics = {
+        "var_hist": var_hist, "var_param": var_param, "var_cf": var_cf,
+        "var_fhs": var_fhs, "es_hist": es_hist, "es_param": es_param,
+        "sharpe": sharpe, "sortino": sortino, "calmar": calmar, "max_dd": max_dd,
+    }
+    risk_bullets = interpret_risk(risk_metrics, confidence)
+    render_interpretation_section(
+        title="📝 Interpretación",
+        bullets=risk_bullets,
+        ai_prompt=(
+            "Eres un analista cuantitativo. Te doy un conjunto de métricas "
+            f"de riesgo de {ticker}, junto con una interpretación "
+            "automática ya generada por reglas fijas (sin IA). Escribe una "
+            "ampliación breve (unas 300 palabras) en español, en tono "
+            "profesional pero accesible para alguien sin formación "
+            "financiera avanzada, que la desarrolle sin repetirla "
+            "literalmente. No inventes datos que no se te han dado.\n\n"
+            f"Métricas: {risk_metrics}\n\n"
+            "Interpretación punto a punto ya generada por la app:\n"
+            + "\n".join(f"- {b}" for b in risk_bullets)
+        ),
+        state_key="risk_ai_report",
+        pdf_title="Interpretación — Riesgo",
+        pdf_filename=f"interpretacion_riesgo_{ticker}.pdf",
+        pdf_meta={"Ticker": ticker, "Confianza": f"{confidence:.0%}"},
+    )
 
     section("VaR rodante")
     st.plotly_chart(

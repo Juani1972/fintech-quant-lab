@@ -3,7 +3,6 @@ import json
 
 import streamlit as st
 
-from app.core.ai_report import AIReportError
 from app.core.data_loader import compute_log_returns, load_prices
 from app.core.garch import (
     check_stationarity,
@@ -12,12 +11,11 @@ from app.core.garch import (
     plain_language_summary,
     residual_diagnostics,
 )
+from app.core.interpretation import interpret_garch
 from app.core.plotting import line_chart
-from app.core.report import build_ai_report_pdf
+from app.report_ui import render_interpretation_section
 from app.state import (
     ensure_session_initialized,
-    generate_ai_report,
-    get_ai_api_key,
     get_global_params,
     get_global_provider,
     get_global_provider_kwargs,
@@ -221,6 +219,7 @@ if st.session_state.get("garch_has_run"):
     )
 
     section("🧪 Diagnósticos de residuos")
+    diag = None
     try:
         diag = residual_diagnostics(result, lags=10)
         d1, d2, d3, d4 = st.columns(4)
@@ -261,57 +260,34 @@ if st.session_state.get("garch_has_run"):
     conclusion_text, conclusion_variant = plain_language_summary(result, fc)
     conclusion(conclusion_text, variant=conclusion_variant)
 
-    section("🤖 Informe con IA")
-    ai_key = get_ai_api_key()
-    if not ai_key:
-        callout(
-            "Configura tu clave gratuita de IA (Gemini o Groq) en la "
-            "barra lateral de la portada ('🤖 Informes con IA') para "
-            "generar un informe más completo, interpretando estos "
-            "resultados con IA.",
-            variant="info",
-        )
-    else:
-        if st.button("🤖 Generar informe con IA"):
-            ai_prompt = (
-                "Eres un analista cuantitativo. Te doy el resultado de "
-                f"ajustar un modelo GARCH ({vol}, p={p}, q={q}, "
-                f"distribución {dist}) sobre {ticker}. Escribe un informe "
-                "breve (unas 300 palabras) en español, en tono profesional "
-                "pero accesible para alguien sin formación financiera "
-                "avanzada. Interpreta qué significa la volatilidad actual "
-                "y el pronóstico, qué implicaciones prácticas tiene (no "
-                "en qué dirección se moverá el precio, GARCH no predice "
-                "eso), y cualquier matiz relevante sobre la fiabilidad del "
-                "ajuste. No inventes datos que no se te han dado.\n\n"
-                f"Volatilidad actual: {float(result.conditional_volatility.iloc[-1]):.4f}\n"
-                f"Volatilidad media histórica: {float(result.conditional_volatility.mean()):.4f}\n"
-                f"Pronóstico a 30 días (último valor): {float(fc.iloc[-1]):.4f}\n"
-                f"AIC: {result.aic:.2f}, convergió: {result.converged}\n\n"
-                f"Conclusión automática ya generada por la app: {conclusion_text}"
-            )
-            with st.spinner("Generando informe con IA..."):
-                try:
-                    st.session_state["garch_ai_report"] = generate_ai_report(ai_prompt)
-                except AIReportError as e:
-                    st.session_state["garch_ai_report"] = None
-                    st.error(f"No se pudo generar el informe: {e}")
-
-        if st.session_state.get("garch_ai_report"):
-            st.markdown(st.session_state["garch_ai_report"])
-            st.download_button(
-                "📄 Descargar informe en PDF",
-                build_ai_report_pdf(
-                    title="Informe con IA — GARCH",
-                    meta={
-                        "Ticker": ticker,
-                        "Modelo": f"{vol} (p={p}, q={q}, dist={dist})",
-                    },
-                    report_text=st.session_state["garch_ai_report"],
-                ),
-                file_name=f"informe_ia_garch_{ticker}.pdf",
-                mime="application/pdf",
-            )
+    garch_bullets = interpret_garch(result, diag, fc)
+    render_interpretation_section(
+        title="📝 Interpretación",
+        bullets=garch_bullets,
+        ai_prompt=(
+            "Eres un analista cuantitativo. Te doy el resultado de "
+            f"ajustar un modelo GARCH ({vol}, p={p}, q={q}, "
+            f"distribución {dist}) sobre {ticker}, junto con una "
+            "interpretación automática ya generada por reglas fijas (sin "
+            "IA). Escribe una ampliación breve (unas 300 palabras) en "
+            "español, en tono profesional pero accesible para alguien sin "
+            "formación financiera avanzada, que la desarrolle sin "
+            "repetirla literalmente. No en qué dirección se moverá el "
+            "precio (GARCH no predice eso). No inventes datos que no se "
+            "te han dado.\n\n"
+            f"Volatilidad actual: {float(result.conditional_volatility.iloc[-1]):.4f}\n"
+            f"Volatilidad media histórica: {float(result.conditional_volatility.mean()):.4f}\n"
+            f"Pronóstico a 30 días (último valor): {float(fc.iloc[-1]):.4f}\n"
+            f"AIC: {result.aic:.2f}, convergió: {result.converged}\n\n"
+            f"Conclusión automática: {conclusion_text}\n"
+            "Interpretación punto a punto ya generada por la app:\n"
+            + "\n".join(f"- {b}" for b in garch_bullets)
+        ),
+        state_key="garch_ai_report",
+        pdf_title="Interpretación — GARCH",
+        pdf_filename=f"interpretacion_garch_{ticker}.pdf",
+        pdf_meta={"Ticker": ticker, "Modelo": f"{vol} (p={p}, q={q}, dist={dist})"},
+    )
 
     with st.expander("📋 Resumen completo del modelo"):
         st.text(result.model_result.summary().as_text())
