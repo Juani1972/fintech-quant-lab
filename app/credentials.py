@@ -14,6 +14,7 @@ tener que pegarla en cada arranque.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 from pathlib import Path
@@ -45,7 +46,8 @@ def _read_file() -> dict:
     if not CREDENTIALS_PATH.exists():
         return {}
     try:
-        return json.loads(CREDENTIALS_PATH.read_text(encoding="utf-8"))
+        data: dict = json.loads(CREDENTIALS_PATH.read_text(encoding="utf-8"))
+        return data
     except (json.JSONDecodeError, OSError):
         return {}
 
@@ -108,10 +110,8 @@ def delete_gemini_key_from_file() -> None:
     if data:
         _write_file(data)
     else:
-        try:
+        with contextlib.suppress(FileNotFoundError):
             CREDENTIALS_PATH.unlink()
-        except FileNotFoundError:
-            pass
 
 
 def has_file_key() -> bool:

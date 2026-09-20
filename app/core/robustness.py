@@ -303,7 +303,7 @@ def _block_bootstrap(
     n_blocks = int(np.ceil(horizon / block_size))
     starts = rng.integers(0, max(1, n - block_size + 1), size=n_blocks)
     chunks = [data[s : s + block_size] for s in starts]
-    concatenated = np.concatenate(chunks)[:horizon]
+    concatenated: np.ndarray = np.concatenate(chunks)[:horizon]
     return concatenated
 
 
