@@ -8,6 +8,7 @@ import streamlit as st
 from app.core.backtest import BacktestMode, run_backtest
 from app.core.cointegration import engle_granger
 from app.core.data_loader import load_prices
+from app.core.interpretation import interpret_optimization
 from app.core.optimization import (
     OptimizationResult,
     deflated_sharpe_ratio,
@@ -19,6 +20,7 @@ from app.core.walkforward import (
     signal_from_momentum,
     signal_from_pairs_trading,
 )
+from app.report_ui import render_interpretation_section
 from app.state import (
     ensure_session_initialized,
     get_global_params,
@@ -287,6 +289,7 @@ if run:
         })
         st.dataframe(best_df.style.format("{:.4f}"), use_container_width=True)
 
+    dsr = None
     if objective == "sharpe":
         section("🎲 Deflated Sharpe Ratio")
         callout(
@@ -325,6 +328,32 @@ if run:
                     "ventaja real. Trátalo con cautela.",
                     variant="warning",
                 )
+
+    opt_bullets = interpret_optimization(result, dsr)
+    render_interpretation_section(
+        title="📝 Interpretación",
+        bullets=opt_bullets,
+        ai_prompt=(
+            "Eres un analista cuantitativo. Te doy el resultado de un "
+            f"grid search evaluado con walk-forward de una estrategia "
+            f"({strategy}) sobre {t1}" + (f" y {t2}" if t2 else "") + ", "
+            "junto con una interpretación automática ya generada por "
+            "reglas fijas (sin IA). Escribe una ampliación breve (unas 300 "
+            "palabras) en español, en tono profesional pero accesible "
+            "para alguien sin formación financiera avanzada, que la "
+            "desarrolle sin repetirla literalmente. No inventes datos que "
+            "no se te han dado.\n\n"
+            f"Mejores parámetros: {result.best_params}\n"
+            f"Métricas OOS: {result.best_oos_metrics}\n"
+            f"Métricas IS: {result.best_is_metrics}\n\n"
+            "Interpretación punto a punto ya generada por la app:\n"
+            + "\n".join(f"- {b}" for b in opt_bullets)
+        ),
+        state_key="opt_ai_report",
+        pdf_title="Interpretación — Optimización",
+        pdf_filename=f"interpretacion_optimizacion_{strategy.replace(' ', '_').lower()}.pdf",
+        pdf_meta={"Estrategia": strategy, "Objetivo": objective},
+    )
 
     section("📋 Grid completo")
     display_cols = result.param_names + [

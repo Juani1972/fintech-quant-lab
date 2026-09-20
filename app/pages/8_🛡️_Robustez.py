@@ -10,6 +10,7 @@ import streamlit as st
 from app.core.backtest import BacktestMode
 from app.core.cointegration import engle_granger
 from app.core.data_loader import load_prices
+from app.core.interpretation import interpret_robustness
 from app.core.robustness import (
     monte_carlo_bootstrap,
     parameter_sensitivity,
@@ -21,6 +22,7 @@ from app.core.walkforward import (
     signal_from_pairs_trading,
     walk_forward_analysis,
 )
+from app.report_ui import render_interpretation_section
 from app.state import (
     ensure_session_initialized,
     get_global_params,
@@ -379,6 +381,33 @@ if run:
         "(1 = muy estable). Busca una meseta alrededor del valor base, "
         "no un pico aislado.",
         variant="info",
+    )
+
+    rob_bullets = interpret_robustness(report, mc, sens)
+    render_interpretation_section(
+        title="📝 Interpretación",
+        bullets=rob_bullets,
+        ai_prompt=(
+            "Eres un analista cuantitativo. Te doy el resultado de un "
+            f"análisis de robustez de una estrategia ({strategy}) sobre "
+            f"{t1}" + (f" y {t2}" if t2 else "") + ", junto con una "
+            "interpretación automática ya generada por reglas fijas (sin "
+            "IA). Escribe una ampliación breve (unas 300 palabras) en "
+            "español, en tono profesional pero accesible para alguien sin "
+            "formación financiera avanzada, que la desarrolle sin "
+            "repetirla literalmente. No inventes datos que no se te han "
+            "dado.\n\n"
+            f"Score final: {report.final_score:.1f}/100 ({report.interpretation})\n"
+            f"Componentes: {report.components}\n"
+            f"Monte Carlo: media={mc.mean:.3f}, P(Sharpe>0)={float((mc.distribution > 0).mean()):.1%}\n"
+            f"Sensibilidad de {sens.param_name}: score={sens.stability_score:.2f}\n\n"
+            "Interpretación punto a punto ya generada por la app:\n"
+            + "\n".join(f"- {b}" for b in rob_bullets)
+        ),
+        state_key="rob_ai_report",
+        pdf_title="Interpretación — Robustez",
+        pdf_filename=f"interpretacion_robustez_{strategy.replace(' ', '_').lower()}.pdf",
+        pdf_meta={"Estrategia": strategy, "Score": f"{report.final_score:.1f}/100"},
     )
 
     section("⬇️ Descargas")

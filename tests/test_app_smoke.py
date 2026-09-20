@@ -417,7 +417,7 @@ def test_garch_ai_report_button_does_not_reset_results():
     """Regresión: dentro de la sección de resultados de GARCH, `run`
     (el botón "Ejecutar GARCH") solo es True en el rerun donde se
     pulsa -- cualquier otro botón de esa misma sección (como
-    "Generar informe con IA") dispara su propio rerun, en el que
+    "Ampliar con IA") dispara su propio rerun, en el que
     `run` vuelve a ser False, y toda la sección de resultados
     desaparecía (la página volvía al aviso "Configura los
     parámetros..."), perdiendo el ajuste ya calculado."""
@@ -443,7 +443,7 @@ def test_garch_ai_report_button_does_not_reset_results():
         assert not at.exception
         assert any("AIC" in (m.label or "") for m in at.metric)
 
-        ai_button = next(b for b in at.button if "Generar informe con IA" in (b.label or ""))
+        ai_button = next(b for b in at.button if "Ampliar con IA" in (b.label or ""))
         with patch("app.core.ai_report.generate_report", return_value="## Informe\nContenido."):
             at = ai_button.click().run()
 
@@ -457,7 +457,7 @@ def test_garch_ai_report_button_does_not_reset_results():
 def test_backtest_ai_report_button_does_not_reset_results():
     """Regresión: mismo problema que en GARCH (ver
     test_garch_ai_report_button_does_not_reset_results), pero en la
-    página de Backtest -- "Generar informe con IA" hacía desaparecer
+    página de Backtest -- "Ampliar con IA" hacía desaparecer
     los resultados del backtest ya calculado."""
     from unittest.mock import patch
 
@@ -482,7 +482,7 @@ def test_backtest_ai_report_button_does_not_reset_results():
         assert not at.exception
         assert any("Sharpe" in (m.label or "") for m in at.metric)
 
-        ai_button = next(b for b in at.button if "Generar informe con IA" in (b.label or ""))
+        ai_button = next(b for b in at.button if "Ampliar con IA" in (b.label or ""))
         with patch("app.core.ai_report.generate_report", return_value="## Informe\nContenido."):
             at = ai_button.click().run()
 
@@ -521,7 +521,7 @@ def test_garch_ai_report_with_groq_provider_does_not_reset_results():
         assert not at.exception
         assert any("AIC" in (m.label or "") for m in at.metric)
 
-        ai_button = next(b for b in at.button if "Generar informe con IA" in (b.label or ""))
+        ai_button = next(b for b in at.button if "Ampliar con IA" in (b.label or ""))
         with patch(
             "app.core.groq_report.generate_report", return_value="## Informe de Groq\nContenido.",
         ) as mock_gen:

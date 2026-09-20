@@ -13,6 +13,7 @@ from app.core.report import (
     _trades_table_html,
     build_ai_report_pdf,
     build_backtest_report,
+    build_interpretation_pdf,
     build_walkforward_report,
 )
 
@@ -239,4 +240,45 @@ def test_build_ai_report_pdf_handles_non_latin1_characters():
 
 def test_build_ai_report_pdf_empty_report_text_does_not_crash():
     pdf_bytes = build_ai_report_pdf(title="Vacío", meta={}, report_text="")
+    assert pdf_bytes.startswith(b"%PDF-")
+
+
+# ============================================================
+#  build_interpretation_pdf
+# ============================================================
+def test_build_interpretation_pdf_bullets_only_returns_valid_pdf():
+    """Sin IA: solo la interpretación determinista -- debe funcionar
+    sin necesitar `ai_text`."""
+    pdf_bytes = build_interpretation_pdf(
+        title="Interpretación — GARCH",
+        meta={"Ticker": "AAPL"},
+        bullets=["El modelo **convergió**.", "Volatilidad actual cerca de la media."],
+    )
+    assert isinstance(pdf_bytes, bytes)
+    assert pdf_bytes.startswith(b"%PDF-")
+    assert len(pdf_bytes) > 500
+
+
+def test_build_interpretation_pdf_with_ai_text_appends_section():
+    pdf_bytes = build_interpretation_pdf(
+        title="Interpretación — Backtest",
+        meta={"Estrategia": "Momentum"},
+        bullets=["50 operaciones: muestra razonable."],
+        ai_text="La estrategia muestra un comportamiento consistente.",
+    )
+    assert pdf_bytes.startswith(b"%PDF-")
+
+
+def test_build_interpretation_pdf_no_bullets_does_not_crash():
+    pdf_bytes = build_interpretation_pdf(title="Sin datos", meta={}, bullets=[])
+    assert pdf_bytes.startswith(b"%PDF-")
+
+
+def test_build_interpretation_pdf_handles_non_latin1_characters():
+    pdf_bytes = build_interpretation_pdf(
+        title="Título con raya —",
+        meta={"Nota": "comillas “curvas”"},
+        bullets=["Punto con raya — larga y viñeta •."],
+        ai_text="Ampliación con emoji 🚀 y comillas “curvas”.",
+    )
     assert pdf_bytes.startswith(b"%PDF-")

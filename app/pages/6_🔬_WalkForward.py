@@ -10,6 +10,7 @@ from app.core.alerts import AlertDispatcher, check_backtest_rules, default_walkf
 from app.core.backtest import BacktestMode
 from app.core.cointegration import engle_granger
 from app.core.data_loader import load_prices
+from app.core.interpretation import interpret_walkforward
 from app.core.report import build_walkforward_report
 from app.core.walkforward import (
     signal_from_mean_reversion,
@@ -17,6 +18,7 @@ from app.core.walkforward import (
     signal_from_pairs_trading,
     walk_forward_analysis,
 )
+from app.report_ui import render_interpretation_section
 from app.state import (
     ensure_session_initialized,
     get_global_params,
@@ -259,6 +261,30 @@ if run:
                     variant="warning")
         else:
             callout(f"Degradación aceptable: {degradation:.0%}.", variant="success")
+
+    wf_bullets = interpret_walkforward(result)
+    render_interpretation_section(
+        title="📝 Interpretación",
+        bullets=wf_bullets,
+        ai_prompt=(
+            "Eres un analista cuantitativo. Te doy el resultado de un "
+            f"walk-forward analysis de una estrategia ({strategy}) sobre "
+            f"{t1}" + (f" y {t2}" if t2 else "") + ", junto con una "
+            "interpretación automática ya generada por reglas fijas (sin "
+            "IA). Escribe una ampliación breve (unas 300 palabras) en "
+            "español, en tono profesional pero accesible para alguien sin "
+            "formación financiera avanzada, que la desarrolle sin "
+            "repetirla literalmente. No inventes datos que no se te han "
+            "dado.\n\n"
+            f"Métricas IS: {is_m}\nMétricas OOS: {oos_m}\n\n"
+            "Interpretación punto a punto ya generada por la app:\n"
+            + "\n".join(f"- {b}" for b in wf_bullets)
+        ),
+        state_key="wf_ai_report",
+        pdf_title="Interpretación — Walk-Forward",
+        pdf_filename=f"interpretacion_walkforward_{strategy.replace(' ', '_').lower()}.pdf",
+        pdf_meta={"Estrategia": strategy, "Ventanas": result.params["n_windows"]},
+    )
 
     section("🔔 Alertas")
     triggered_alerts = check_backtest_rules(oos_m, rules=default_walkforward_rules())

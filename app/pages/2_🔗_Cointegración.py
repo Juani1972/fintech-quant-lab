@@ -13,8 +13,10 @@ from app.core.cointegration import (
     rolling_zscore,
 )
 from app.core.data_loader import load_prices
+from app.core.interpretation import interpret_cointegration
 from app.core.multiple_testing import correct_pvalues
 from app.core.plotting import line_chart, zscore_chart
+from app.report_ui import render_interpretation_section
 from app.state import (
     ensure_session_initialized,
     get_global_params,
@@ -255,6 +257,33 @@ if run:
 
     conclusion_text, conclusion_variant = plain_language_summary(result, hl)
     conclusion(conclusion_text, variant=conclusion_variant)
+
+    coint_bullets = interpret_cointegration(result, hl)
+    render_interpretation_section(
+        title="📝 Interpretación",
+        bullets=coint_bullets,
+        ai_prompt=(
+            "Eres un analista cuantitativo. Te doy el resultado de un test "
+            f"de cointegración (Engle-Granger) entre {t1} y {t2}, junto con "
+            "una interpretación automática ya generada por reglas fijas "
+            "(sin IA). Escribe una ampliación breve (unas 300 palabras) en "
+            "español, en tono profesional pero accesible para alguien sin "
+            "formación financiera avanzada, que la desarrolle sin "
+            "repetirla literalmente. No inventes datos que no se te han "
+            "dado.\n\n"
+            f"p-valor Engle-Granger: {result.pvalue:.4f}\n"
+            f"ADF spread p-valor: {result.adf_spread_pvalue:.4f}\n"
+            f"Alpha: {result.alpha:.4f}, Beta: {result.beta:.4f}\n"
+            f"Half-life: {hl if hl != float('inf') else 'indefinida'}\n\n"
+            f"Conclusión automática: {conclusion_text}\n"
+            "Interpretación punto a punto ya generada por la app:\n"
+            + "\n".join(f"- {b}" for b in coint_bullets)
+        ),
+        state_key="coint_ai_report",
+        pdf_title="Interpretación — Cointegración",
+        pdf_filename=f"interpretacion_cointegracion_{t1}_{t2}.pdf",
+        pdf_meta={"Par": f"{t1} / {t2}", "Ventana z-score": window, "Umbral entrada": entry},
+    )
 
     section(f"Z-score (ventana={window})")
     z = rolling_zscore(result.spread, window)
