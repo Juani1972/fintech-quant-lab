@@ -530,8 +530,8 @@ def build_ai_report_pdf(
     pdf.multi_cell(
         0, 5,
         "Disclaimer: este informe combina cálculos de la app con texto "
-        "generado por un modelo de IA (Google Gemini) a partir de esos "
-        "cálculos. Es educativo y de investigación, no constituye "
+        "generado por un modelo de IA a partir de esos cálculos. Es "
+        "educativo y de investigación, no constituye "
         "asesoramiento financiero. Verifica siempre los datos antes de "
         "cualquier uso real.",
         new_x=XPos.LMARGIN, new_y=YPos.NEXT,

@@ -16,8 +16,9 @@ from app.config import (
     PAGES,
 )
 from app.core.ai_report import DEFAULT_MODEL as DEFAULT_GEMINI_MODEL
-from app.core.ai_report import AIReportError, list_available_models
+from app.core.ai_report import AIReportError
 from app.core.data_loader import search_ticker
+from app.core.groq_report import DEFAULT_MODEL as DEFAULT_GROQ_MODEL
 from app.core.universe import list_universes, universe_to_string
 from app.styles import (
     callout,
@@ -73,6 +74,10 @@ if "global_end" not in st.session_state:
     st.session_state["global_end"] = DEFAULT_END
 if "gemini_model" not in st.session_state:
     st.session_state["gemini_model"] = DEFAULT_GEMINI_MODEL
+if "groq_model" not in st.session_state:
+    st.session_state["groq_model"] = DEFAULT_GROQ_MODEL
+if "ai_provider" not in st.session_state:
+    st.session_state["ai_provider"] = "gemini"
 
 
 # ============================================================
@@ -146,6 +151,156 @@ def _on_gemini_key_change() -> None:
     st.session_state["gemini_api_key_manual"] = st.session_state.get(
         "_gemini_api_key_input", ""
     )
+
+
+def _on_groq_key_change() -> None:
+    """Igual que _on_gemini_key_change, para el campo de Groq."""
+    st.session_state["groq_api_key_manual"] = st.session_state.get(
+        "_groq_api_key_input", ""
+    )
+
+
+def _on_ai_provider_change() -> None:
+    """Copia la selección a `ai_provider` -- misma razón que
+    _on_gemini_key_change: `ai_provider` es lo que leen GARCH/Backtest
+    vía get_ai_provider(), y necesita sobrevivir a la navegación entre
+    páginas, cosa que el key= del propio selectbox no garantiza."""
+    st.session_state["ai_provider"] = st.session_state.get(
+        "_ai_provider_select", "gemini"
+    )
+
+
+def _render_ai_provider_ui(provider: str) -> None:
+    """Renderiza el campo de clave + modelo + "ver modelos
+    disponibles" para `provider` ('gemini' o 'groq').
+
+    Misma UI para los dos proveedores -- solo cambian las funciones
+    de credenciales/backend a las que llama. Se centraliza aquí en
+    vez de duplicar el bloque dos veces para que un arreglo futuro
+    (como el de gemini_api_key_manual más abajo) se aplique a ambos
+    proveedores a la vez, no solo al que se tocó primero.
+    """
+    import app.credentials as creds
+
+    if provider == "groq":
+        from app.core.groq_report import list_available_models as _list_models
+
+        get_key_with_source = creds.get_groq_key_with_source
+        save_key_to_file = creds.save_groq_key_to_file
+        delete_key_from_file = creds.delete_groq_key_from_file
+        has_file_key_fn = creds.has_groq_file_key
+        manual_field = "groq_api_key_manual"
+        input_widget_key = "_groq_api_key_input"
+        on_change_cb = _on_groq_key_change
+        model_field = "groq_model"
+        models_list_field = "_groq_models_list"
+        provider_label = "Groq"
+        key_help = "Gratis en console.groq.com/keys, sin tarjeta."
+        env_var_name = "GROQ_API_KEY"
+    else:
+        from app.core.ai_report import list_available_models as _list_models
+
+        get_key_with_source = creds.get_gemini_key_with_source
+        save_key_to_file = creds.save_gemini_key_to_file
+        delete_key_from_file = creds.delete_gemini_key_from_file
+        has_file_key_fn = creds.has_file_key
+        manual_field = "gemini_api_key_manual"
+        input_widget_key = "_gemini_api_key_input"
+        on_change_cb = _on_gemini_key_change
+        model_field = "gemini_model"
+        models_list_field = "_gemini_models_list"
+        provider_label = "Google AI Studio"
+        key_help = (
+            "Gratis en aistudio.google.com/apikey, sin tarjeta. "
+            "Nivel gratuito: hasta 250 peticiones/día según el modelo."
+        )
+        env_var_name = "GEMINI_API_KEY"
+
+    st.caption(
+        "Opcional. La app busca la clave en este orden: secretos de "
+        f"Streamlit → variable de entorno `{env_var_name}` → fichero "
+        "local → campo de abajo."
+    )
+
+    _key, _source = get_key_with_source()
+    _source_label = {
+        "secrets": "🔐 Streamlit secrets (.streamlit/secrets.toml)",
+        "env": f"🌍 Variable de entorno {env_var_name}",
+        "fichero": "💾 Fichero local data/credentials.json",
+        "manual": "✍️ Introducida en esta sesión",
+        "ninguna": "❌ Ninguna (la IA está desactivada)",
+    }[_source]
+    st.caption(f"**Fuente activa:** {_source_label}")
+
+    manual_key = st.text_input(
+        f"API key de {provider_label}",
+        type="password",
+        value=st.session_state.get(manual_field, ""),
+        key=input_widget_key,
+        on_change=on_change_cb,
+        help=key_help,
+        disabled=_source in ("secrets", "env", "fichero"),
+    )
+
+    col_save, col_clear = st.columns(2)
+    with col_save:
+        if st.button(
+            "💾 Guardar en fichero local",
+            use_container_width=True,
+            key=f"_save_key_{provider}",
+            disabled=not manual_key or _source in ("secrets", "env", "fichero"),
+            help=(
+                "Guarda la clave en data/credentials.json para no "
+                "tener que pegarla en cada arranque. Es texto plano: "
+                "asegúrate de añadir esa ruta a tu .gitignore."
+            ),
+        ):
+            save_key_to_file(manual_key)
+            st.success("Clave guardada en data/credentials.json.")
+            st.rerun()
+    with col_clear:
+        if st.button(
+            "🗑️ Borrar clave guardada",
+            use_container_width=True,
+            key=f"_clear_key_{provider}",
+            disabled=not has_file_key_fn(),
+            help="Borra la clave guardada en data/credentials.json.",
+        ):
+            delete_key_from_file()
+            st.success("Clave borrada del fichero local.")
+            st.rerun()
+
+    st.text_input(
+        "Modelo", key=model_field,
+        help=(
+            "Los nombres y niveles gratuitos de los modelos cambian "
+            "con cierta frecuencia -- si el modelo por defecto deja "
+            "de funcionar, pulsa el botón de abajo para listar los "
+            "vigentes con tu clave."
+        ),
+    )
+
+    if st.button(
+        "🔍 Ver modelos disponibles",
+        use_container_width=True,
+        key=f"_list_models_{provider}",
+        disabled=not _key,
+        help=(
+            "Consulta a la API qué modelos admite tu clave ahora "
+            "mismo -- útil cuando el modelo configurado deja de "
+            "existir o está mal escrito."
+        ),
+    ):
+        try:
+            with st.spinner("Consultando modelos disponibles..."):
+                st.session_state[models_list_field] = _list_models(_key)
+        except AIReportError as e:
+            st.session_state[models_list_field] = None
+            st.error(str(e))
+
+    if st.session_state.get(models_list_field):
+        st.caption("Modelos disponibles con tu clave (copia uno al campo 'Modelo'):")
+        st.code("\n".join(st.session_state[models_list_field]), language=None)
 
 
 # ============================================================
@@ -267,100 +422,23 @@ with st.sidebar:
             )
 
     # --- Informes con IA ---
-    with st.expander("🤖 Informes con IA (Google Gemini)"):
-        from app.credentials import (
-            delete_gemini_key_from_file,
-            get_gemini_key_with_source,
-            has_file_key,
-            save_gemini_key_to_file,
-        )
-
-        st.caption(
-            "Opcional. La app busca la clave en este orden: "
-            "secretos de Streamlit → variable de entorno `GEMINI_API_KEY` "
-            "→ fichero local → campo de abajo."
-        )
-
-        _key, _source = get_gemini_key_with_source()
-        _source_label = {
-            "secrets": "🔐 Streamlit secrets (.streamlit/secrets.toml)",
-            "env": "🌍 Variable de entorno GEMINI_API_KEY",
-            "fichero": "💾 Fichero local data/credentials.json",
-            "manual": "✍️ Introducida en esta sesión",
-            "ninguna": "❌ Ninguna (la IA está desactivada)",
-        }[_source]
-        st.caption(f"**Fuente activa:** {_source_label}")
-
-        manual_key = st.text_input(
-            "API key de Google AI Studio",
-            type="password",
-            value=st.session_state.get("gemini_api_key_manual", ""),
-            key="_gemini_api_key_input",
-            on_change=_on_gemini_key_change,
+    with st.expander("🤖 Informes con IA"):
+        _provider_options = ["gemini", "groq"]
+        _provider_labels = {"gemini": "Google Gemini", "groq": "Groq"}
+        st.selectbox(
+            "Proveedor de IA",
+            _provider_options,
+            format_func=lambda p: _provider_labels[p],
+            index=_provider_options.index(st.session_state.get("ai_provider", "gemini")),
+            key="_ai_provider_select",
+            on_change=_on_ai_provider_change,
             help=(
-                "Gratis en aistudio.google.com/apikey, sin tarjeta. "
-                "Nivel gratuito: hasta 250 peticiones/día según el modelo."
-            ),
-            disabled=_source in ("secrets", "env", "fichero"),
-        )
-
-        col_save, col_clear = st.columns(2)
-        with col_save:
-            if st.button(
-                "💾 Guardar en fichero local",
-                use_container_width=True,
-                disabled=not manual_key or _source in ("secrets", "env", "fichero"),
-                help=(
-                    "Guarda la clave en data/credentials.json para no "
-                    "tener que pegarla en cada arranque. Es texto plano: "
-                    "asegúrate de añadir esa ruta a tu .gitignore."
-                ),
-            ):
-                save_gemini_key_to_file(manual_key)
-                st.success("Clave guardada en data/credentials.json.")
-                st.rerun()
-        with col_clear:
-            if st.button(
-                "🗑️ Borrar clave guardada",
-                use_container_width=True,
-                disabled=not has_file_key(),
-                help="Borra la clave guardada en data/credentials.json.",
-            ):
-                delete_gemini_key_from_file()
-                st.success("Clave borrada del fichero local.")
-                st.rerun()
-
-        st.text_input(
-            "Modelo", key="gemini_model",
-            help=(
-                "Los nombres y niveles gratuitos de los modelos de "
-                "Gemini cambian con cierta frecuencia -- si el modelo "
-                "por defecto deja de funcionar, consulta "
-                "aistudio.google.com para ver el nombre vigente, o "
-                "pulsa el botón de abajo para listarlos con tu clave."
+                "Cada proveedor necesita su propia clave gratuita. Si "
+                "uno está saturado o deja de funcionar, cambia al otro "
+                "sin perder la configuración del primero."
             ),
         )
-
-        if st.button(
-            "🔍 Ver modelos disponibles",
-            use_container_width=True,
-            disabled=not _key,
-            help=(
-                "Consulta a la API de Gemini qué modelos admite tu "
-                "clave ahora mismo -- útil cuando el modelo configurado "
-                "deja de existir (Google los retira de vez en cuando)."
-            ),
-        ):
-            try:
-                with st.spinner("Consultando modelos disponibles..."):
-                    st.session_state["_gemini_models_list"] = list_available_models(_key)
-            except AIReportError as e:
-                st.session_state["_gemini_models_list"] = None
-                st.error(str(e))
-
-        if st.session_state.get("_gemini_models_list"):
-            st.caption("Modelos disponibles con tu clave (copia uno al campo 'Modelo'):")
-            st.code("\n".join(st.session_state["_gemini_models_list"]), language=None)
+        _render_ai_provider_ui(st.session_state.get("ai_provider", "gemini"))
 
     st.divider()
 
