@@ -57,6 +57,10 @@ def _on_universe_change() -> None:
     tickers_str = universe_to_string(name)
     if tickers_str:
         st.session_state["global_tickers"] = tickers_str
+        # También el campo del formulario -- si no, queda con el valor
+        # viejo y "Aplicar tickers" lo sobrescribe de vuelta encima de
+        # este cambio (ver _on_search_result_click).
+        st.session_state["_tickers_form_input"] = tickers_str
 
 
 def _on_search_result_click(symbol: str) -> None:
@@ -72,7 +76,11 @@ def _on_search_result_click(symbol: str) -> None:
     ]
     if symbol not in current:
         current.append(symbol)
-    st.session_state["global_tickers"] = ", ".join(current)
+    new_value = ", ".join(current)
+    st.session_state["global_tickers"] = new_value
+    # Igual que en _on_universe_change: mantener sincronizado el campo
+    # del formulario para que "Aplicar tickers" no revierta este cambio.
+    st.session_state["_tickers_form_input"] = new_value
     st.session_state["_last_searched_ticker"] = symbol
 
 
