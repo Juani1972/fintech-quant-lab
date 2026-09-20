@@ -329,6 +329,114 @@ def test_licencia_page_loads_without_exception():
     assert not at.exception
 
 
+def test_gemini_manual_key_persists_across_page_navigation():
+    """Regresión: la clave de Gemini pegada a mano en la portada
+    desaparecía en cuanto se navegaba a otra página. Streamlit borra
+    el session_state de un widget en cualquier página donde ese
+    widget no se vuelva a crear -- como el campo de la clave solo
+    existe en main.py, leer directamente su key= (en vez de una clave
+    "normal" sincronizada por separado) hacía que `get_gemini_api_key()`
+    devolviera vacío fuera de la portada, aunque la fuente activa
+    mostrara "Introducida en esta sesión" en la propia portada."""
+    at = AppTest.from_file(str(APP_DIR / "main.py"), default_timeout=30)
+    at.run()
+
+    key_input = next(
+        w for w in at.sidebar.text_input
+        if w.label == "API key de Google AI Studio"
+    )
+    key_input.set_value("FAKE-TEST-KEY-12345").run()
+
+    assert at.session_state.get("gemini_api_key_manual") == "FAKE-TEST-KEY-12345"
+
+    at.switch_page(str(APP_DIR / "pages" / "1_📈_GARCH.py")).run()
+    assert not at.exception
+    # La clave "normal" (no atada a ningún widget de esta página) debe
+    # seguir ahí -- antes del fix, Streamlit la borraba al no volver
+    # a crear el widget que la origina.
+    assert at.session_state.get("gemini_api_key_manual") == "FAKE-TEST-KEY-12345"
+
+
+def test_garch_ai_report_button_does_not_reset_results():
+    """Regresión: dentro de la sección de resultados de GARCH, `run`
+    (el botón "Ejecutar GARCH") solo es True en el rerun donde se
+    pulsa -- cualquier otro botón de esa misma sección (como
+    "Generar informe con IA") dispara su propio rerun, en el que
+    `run` vuelve a ser False, y toda la sección de resultados
+    desaparecía (la página volvía al aviso "Configura los
+    parámetros..."), perdiendo el ajuste ya calculado."""
+    from unittest.mock import patch
+
+    import numpy as np
+    import pandas as pd
+
+    idx = pd.bdate_range("2023-01-01", "2024-12-31")
+    rng = np.random.default_rng(7)
+    prices = pd.DataFrame(
+        {"AAA": 100 * np.exp(np.cumsum(rng.normal(0, 0.01, len(idx))))}, index=idx,
+    )
+
+    with patch("app.core.data_loader.load_prices", return_value=prices):
+        at = AppTest.from_file(str(APP_DIR / "pages" / "1_📈_GARCH.py"), default_timeout=30)
+        at.session_state["global_tickers"] = "AAA"
+        at.session_state["gemini_api_key_manual"] = "FAKE-TEST-KEY-12345"
+        at.run()
+
+        run_button = next(b for b in at.sidebar.button if "Ejecutar GARCH" in (b.label or ""))
+        at = run_button.click().run()
+        assert not at.exception
+        assert any("AIC" in (m.label or "") for m in at.metric)
+
+        ai_button = next(b for b in at.button if "Generar informe con IA" in (b.label or ""))
+        with patch("app.core.ai_report.generate_report", return_value="## Informe\nContenido."):
+            at = ai_button.click().run()
+
+        assert not at.exception
+        assert any("AIC" in (m.label or "") for m in at.metric), (
+            "Los resultados de GARCH desaparecieron al generar el informe con IA"
+        )
+        assert at.session_state.get("garch_ai_report") == "## Informe\nContenido."
+
+
+def test_backtest_ai_report_button_does_not_reset_results():
+    """Regresión: mismo problema que en GARCH (ver
+    test_garch_ai_report_button_does_not_reset_results), pero en la
+    página de Backtest -- "Generar informe con IA" hacía desaparecer
+    los resultados del backtest ya calculado."""
+    from unittest.mock import patch
+
+    import numpy as np
+    import pandas as pd
+
+    idx = pd.bdate_range("2023-01-01", "2024-12-31")
+    rng = np.random.default_rng(11)
+    prices = pd.DataFrame(
+        {"AAA": 100 * np.exp(np.cumsum(rng.normal(0, 0.01, len(idx))))}, index=idx,
+    )
+
+    with patch("app.core.data_loader.load_prices", return_value=prices):
+        at = AppTest.from_file(str(APP_DIR / "pages" / "5_🧪_Backtest.py"), default_timeout=30)
+        at.session_state["global_tickers"] = "AAA"
+        at.session_state["gemini_api_key_manual"] = "FAKE-TEST-KEY-12345"
+        at.session_state["bt_strategy"] = "Momentum"  # solo necesita 1 ticker
+        at.run()
+
+        run_button = next(b for b in at.sidebar.button if "Ejecutar backtest" in (b.label or ""))
+        at = run_button.click().run()
+        assert not at.exception
+        assert any("Sharpe" in (m.label or "") for m in at.metric)
+
+        ai_button = next(b for b in at.button if "Generar informe con IA" in (b.label or ""))
+        with patch("app.core.ai_report.generate_report", return_value="## Informe\nContenido."):
+            at = ai_button.click().run()
+
+        assert not at.exception
+        assert any("Sharpe" in (m.label or "") for m in at.metric), (
+            "Los resultados del backtest desaparecieron al generar el informe con IA"
+        )
+        assert at.session_state.get("bt_ai_report") == "## Informe\nContenido."
+
+
 def test_garch_page_config_upload_applies_valid_values():
     """Regresión: subir un JSON de configuración válido en GARCH debe
     actualizar ticker/p/q/vol/dist en el sidebar sin excepción."""
