@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import signal
+import threading
 from datetime import date
 
 import streamlit as st
@@ -30,6 +31,33 @@ from app.styles import (
 #  Configuración + CSS
 # ============================================================
 page_setup("Fintech Quant Lab", APP_ICON)
+
+# ============================================================
+#  Cierre de la app (si se pulsó "Cerrar aplicación")
+# ============================================================
+# Se comprueba aquí, antes de renderizar sidebar/hero/etc., para que
+# esta pantalla sea lo único que se vea -- si no, el resto de la
+# página seguía ahí debajo del aviso y daba la sensación de que la
+# app se había quedado "colgada" en vez de haberse cerrado. El
+# proceso se mata con un pequeño retardo (en otro hilo) para dar
+# tiempo a que este mensaje llegue al navegador antes de que el
+# servidor muera -- matarlo en el mismo instante es una carrera que
+# a veces corta la respuesta a medias.
+if st.session_state.get("_app_closing"):
+    st.markdown(
+        "<div style='text-align:center; padding-top: 20vh;'>"
+        "<h1>✅ Fintech Quant Lab se ha cerrado</h1>"
+        "<p>Ya puedes cerrar esta pestaña del navegador.</p>"
+        "<p style='color:#64748b; font-size:0.9rem;'>"
+        "Si aparece un aviso de \"Connection error\", es normal -- solo "
+        "indica que el navegador ha perdido la conexión con la app, que "
+        "ya se cerró correctamente. Puedes ignorarlo."
+        "</p>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+    threading.Timer(1.5, os.kill, args=(os.getpid(), signal.SIGTERM)).start()
+    st.stop()
 
 # ============================================================
 #  Estado de sesión
@@ -95,6 +123,13 @@ def _on_reset_session() -> None:
     Streamlit (porque el navegador conserva la sesión)."""
     for k in list(st.session_state.keys()):
         del st.session_state[k]
+
+
+def _on_close_app_click() -> None:
+    """Marca la sesión como "cerrando" -- el kill real se hace en el
+    siguiente rerun (ver arriba), no aquí, para que la pantalla de
+    cierre llegue a renderizarse primero."""
+    st.session_state["_app_closing"] = True
 
 
 # ============================================================
@@ -302,13 +337,13 @@ with st.sidebar:
     )
 
     LOCAL_MODE = os.getenv("FQL_LOCAL_MODE", "true").lower() == "true"
-    if LOCAL_MODE and st.button(
-        "🚪 Cerrar aplicación",
-        type="secondary",
-        use_container_width=True,
-    ):
-        st.warning("Cerrando Fintech Quant Lab...")
-        os.kill(os.getpid(), signal.SIGTERM)
+    if LOCAL_MODE:
+        st.button(
+            "🚪 Cerrar aplicación",
+            type="secondary",
+            use_container_width=True,
+            on_click=_on_close_app_click,
+        )
 
 
 # ============================================================
