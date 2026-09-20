@@ -14,11 +14,21 @@ externos del proyecto (providers.py, license.py).
 """
 from __future__ import annotations
 
+import time
+
 import requests
 
 DEFAULT_MODEL = "gemini-3.6-flash"
 API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 DEFAULT_TIMEOUT = 30
+
+# 500/503 son errores transitorios del lado de Google (sobrecarga del
+# modelo, "high demand") -- casi siempre se resuelven solos en unos
+# segundos, así que merece la pena reintentar antes de rendirse. 429
+# (cuota agotada) y el resto de errores no son transitorios en ese
+# sentido -- reintentar no ayuda, así que no entran aquí.
+_TRANSIENT_STATUS_CODES = {500, 503}
+_RETRY_DELAYS_SECONDS = (2, 4, 8)
 
 
 class AIReportError(Exception):
@@ -59,7 +69,9 @@ def generate_report(
         AIReportError: si falta la clave, la API devuelve un error
             (clave inválida, cuota agotada, prompt bloqueado por los
             filtros de seguridad...), o la respuesta no tiene el
-            formato esperado.
+            formato esperado. Los errores 500/503 (sobrecarga
+            temporal del modelo) se reintentan solos unas cuantas
+            veces con espera creciente antes de propagar el error.
     """
     if not api_key or not api_key.strip():
         raise AIReportError(
@@ -75,10 +87,28 @@ def generate_report(
         "generationConfig": {"temperature": temperature},
     }
 
-    try:
-        resp = requests.post(url, headers=headers, json=body, timeout=timeout)
-    except requests.RequestException as exc:
-        raise AIReportError(f"No se pudo contactar con la API de Gemini: {exc}") from exc
+    # Intento inicial + reintentos con espera creciente, solo para
+    # errores transitorios (ver _TRANSIENT_STATUS_CODES). Cualquier
+    # otro resultado (éxito o error no transitorio) corta el bucle en
+    # el acto.
+    max_attempts = len(_RETRY_DELAYS_SECONDS) + 1
+    for delay in (0, *_RETRY_DELAYS_SECONDS):
+        if delay:
+            time.sleep(delay)
+        try:
+            resp = requests.post(url, headers=headers, json=body, timeout=timeout)
+        except requests.RequestException as exc:
+            raise AIReportError(f"No se pudo contactar con la API de Gemini: {exc}") from exc
+
+        if resp.status_code not in _TRANSIENT_STATUS_CODES:
+            break
+
+    if resp.status_code in _TRANSIENT_STATUS_CODES:
+        raise AIReportError(
+            f"La API de Gemini sigue sobrecargada tras {max_attempts} intentos "
+            f"({resp.status_code}) -- suele ser cuestión de demanda puntual "
+            "del modelo gratuito. Espera un poco más y vuelve a intentarlo."
+        )
 
     if resp.status_code == 400:
         raise AIReportError(
