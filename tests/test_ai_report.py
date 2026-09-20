@@ -102,10 +102,14 @@ def test_generate_report_model_not_found_404():
 
 
 def test_generate_report_generic_http_error():
+    # 502, no 503/500 -- esos dos ahora se reintentan (ver los tests
+    # de _TRANSIENT_STATUS_CODES más abajo) y este test no mockea
+    # time.sleep, así que usar uno de ellos aquí lo dejaría esperando
+    # real varios segundos antes de fallar.
     with patch(
         "app.core.ai_report.requests.post",
-        return_value=_fake_response(503, text="Service unavailable"),
-    ), pytest.raises(AIReportError, match="503"):
+        return_value=_fake_response(502, text="Bad Gateway"),
+    ), pytest.raises(AIReportError, match="502"):
         generate_report("prompt", api_key="clave-123")
 
 
@@ -163,6 +167,55 @@ def test_generate_report_temperature_passed_through():
         generate_report("prompt", api_key="clave-123", temperature=0.7)
     body = mock_post.call_args.kwargs["json"]
     assert body["generationConfig"]["temperature"] == 0.7
+
+
+# ============================================================
+#  Reintentos en errores transitorios (500/503)
+# ============================================================
+def test_generate_report_retries_503_then_succeeds():
+    """Regresión: Google devuelve 503 ("this model is currently
+    experiencing high demand") con cierta frecuencia en el nivel
+    gratuito -- es transitorio, así que debe reintentarse solo en
+    vez de fallar directamente."""
+    responses = [_fake_response(503), _fake_response(503), _fake_response(200, _success_payload("ok"))]
+    with (
+        patch("app.core.ai_report.time.sleep") as mock_sleep,
+        patch("app.core.ai_report.requests.post", side_effect=responses) as mock_post,
+    ):
+        result = generate_report("prompt", api_key="clave-123")
+
+    assert result == "ok"
+    assert mock_post.call_count == 3
+    assert mock_sleep.call_count == 2  # solo se espera ANTES de un reintento
+
+
+def test_generate_report_gives_up_after_exhausting_retries():
+    with (
+        patch("app.core.ai_report.time.sleep") as mock_sleep,
+        patch(
+            "app.core.ai_report.requests.post",
+            return_value=_fake_response(503, text="still overloaded"),
+        ) as mock_post,
+        pytest.raises(AIReportError, match="sigue sobrecargada"),
+    ):
+        generate_report("prompt", api_key="clave-123")
+
+    assert mock_post.call_count == 4  # 1 intento inicial + 3 reintentos
+    assert mock_sleep.call_count == 3
+
+
+def test_generate_report_does_not_retry_non_transient_errors():
+    """400/401/403/429/404 no son transitorios -- reintentarlos no
+    ayuda, así que deben fallar en el primer intento."""
+    with (
+        patch("app.core.ai_report.time.sleep") as mock_sleep,
+        patch("app.core.ai_report.requests.post", return_value=_fake_response(429)) as mock_post,
+        pytest.raises(AIReportError, match="Límite de peticiones"),
+    ):
+        generate_report("prompt", api_key="clave-123")
+
+    assert mock_post.call_count == 1
+    mock_sleep.assert_not_called()
 
 
 # ============================================================
