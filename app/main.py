@@ -16,6 +16,7 @@ from app.config import (
     PAGES,
 )
 from app.core.ai_report import DEFAULT_MODEL as DEFAULT_GEMINI_MODEL
+from app.core.ai_report import AIReportError, list_available_models
 from app.core.data_loader import search_ticker
 from app.core.universe import list_universes, universe_to_string
 from app.styles import (
@@ -335,9 +336,31 @@ with st.sidebar:
                 "Los nombres y niveles gratuitos de los modelos de "
                 "Gemini cambian con cierta frecuencia -- si el modelo "
                 "por defecto deja de funcionar, consulta "
-                "aistudio.google.com para ver el nombre vigente."
+                "aistudio.google.com para ver el nombre vigente, o "
+                "pulsa el botón de abajo para listarlos con tu clave."
             ),
         )
+
+        if st.button(
+            "🔍 Ver modelos disponibles",
+            use_container_width=True,
+            disabled=not _key,
+            help=(
+                "Consulta a la API de Gemini qué modelos admite tu "
+                "clave ahora mismo -- útil cuando el modelo configurado "
+                "deja de existir (Google los retira de vez en cuando)."
+            ),
+        ):
+            try:
+                with st.spinner("Consultando modelos disponibles..."):
+                    st.session_state["_gemini_models_list"] = list_available_models(_key)
+            except AIReportError as e:
+                st.session_state["_gemini_models_list"] = None
+                st.error(str(e))
+
+        if st.session_state.get("_gemini_models_list"):
+            st.caption("Modelos disponibles con tu clave (copia uno al campo 'Modelo'):")
+            st.code("\n".join(st.session_state["_gemini_models_list"]), language=None)
 
     st.divider()
 

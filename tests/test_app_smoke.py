@@ -879,6 +879,36 @@ def test_gemini_settings_seeded_with_correct_default():
     assert at.session_state["gemini_model"] == DEFAULT_MODEL
 
 
+def test_list_gemini_models_button_shows_results():
+    """Regresión de UX: cuando el modelo configurado deja de existir
+    (Google los retira de vez en cuando -- ver DEFAULT_MODEL), el
+    usuario necesita saber cuál usar en su lugar. El botón "Ver
+    modelos disponibles" debe mostrar la lista devuelta por la API
+    (con la clave del propio usuario), sin excepción."""
+    from unittest.mock import patch
+
+    at = AppTest.from_file(str(APP_DIR / "main.py"), default_timeout=30)
+    at.session_state["gemini_api_key_manual"] = "FAKE-KEY"
+    at.run()
+
+    list_button = next(
+        b for b in at.sidebar.button if "Ver modelos disponibles" in (b.label or "")
+    )
+    assert not list_button.disabled
+
+    with patch(
+        "app.core.ai_report.list_available_models",
+        return_value=["gemini-3.6-flash", "gemini-3.6-pro"],
+    ):
+        at = list_button.click().run()
+
+    assert not at.exception
+    assert at.session_state["_gemini_models_list"] == ["gemini-3.6-flash", "gemini-3.6-pro"]
+    assert any(
+        "gemini-3.6-flash" in (c.value or "") for c in at.sidebar.code
+    )
+
+
 def test_generate_report_roundtrip_isolated():
     """Regresión: el flujo completo de generar un informe con IA (prompt
     → generate_report mockeada → guardado en session_state → mostrado en

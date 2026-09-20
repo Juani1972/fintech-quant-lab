@@ -143,3 +143,68 @@ def generate_report(
         raise AIReportError("Gemini devolvió una respuesta vacía.")
 
     return text.strip()
+
+
+def list_available_models(api_key: str, timeout: int = DEFAULT_TIMEOUT) -> list[str]:
+    """Lista los modelos de Gemini que admiten `generateContent` para
+    esta clave, tal y como los ve la API ahora mismo.
+
+    Google va retirando modelos con cierta frecuencia (ver
+    DEFAULT_MODEL) y cambia sus nombres -- en vez de mantener aquí
+    una lista fija que se queda obsoleta, se le pregunta a la API
+    directamente. Requiere una clave válida: Google no deja listar
+    modelos sin autenticar.
+
+    Returns:
+        Nombres de modelo (sin el prefijo "models/"), ordenados
+        alfabéticamente.
+
+    Raises:
+        AIReportError: si falta la clave o la API devuelve un error.
+    """
+    if not api_key or not api_key.strip():
+        raise AIReportError(
+            "No hay clave de Google AI Studio configurada. Consigue una "
+            "gratis en https://aistudio.google.com/apikey y pégala en "
+            "la configuración de la barra lateral."
+        )
+
+    headers = {"x-goog-api-key": api_key.strip()}
+    models: list[str] = []
+    url: str | None = API_BASE_URL
+    params: dict[str, str] = {"pageSize": "1000"}
+
+    while url:
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=timeout)
+        except requests.RequestException as exc:
+            raise AIReportError(f"No se pudo contactar con la API de Gemini: {exc}") from exc
+
+        if resp.status_code in (400, 401, 403):
+            raise AIReportError(
+                "Clave de API rechazada -- revisa que la has copiado "
+                "bien desde https://aistudio.google.com/apikey."
+            )
+        if resp.status_code != 200:
+            raise AIReportError(
+                f"La API de Gemini devolvió un error ({resp.status_code}): {resp.text[:300]}"
+            )
+
+        try:
+            data = resp.json()
+        except ValueError as exc:
+            raise AIReportError("La respuesta de Gemini no es JSON válido.") from exc
+
+        for m in data.get("models", []):
+            name = str(m.get("name", "")).removeprefix("models/")
+            methods = m.get("supportedGenerationMethods", [])
+            if name and "generateContent" in methods:
+                models.append(name)
+
+        next_token = data.get("nextPageToken")
+        if next_token:
+            params = {"pageSize": "1000", "pageToken": next_token}
+        else:
+            url = None
+
+    return sorted(set(models))
