@@ -258,7 +258,7 @@ if run:
     conclusion_text, conclusion_variant = plain_language_summary(result, hl)
     conclusion(conclusion_text, variant=conclusion_variant)
 
-    coint_bullets = interpret_cointegration(result, hl)
+    coint_bullets = interpret_cointegration(result, hl, ticker_1=t1, ticker_2=t2)
     render_interpretation_section(
         title="📝 Interpretación",
         bullets=coint_bullets,

@@ -1,8 +1,8 @@
 """Tests de app/core/interpretation/*: interpretación determinista
-(sin IA) de cada módulo cuantitativo. Cada función es pura (recibe un
-resultado ya calculado, devuelve una lista de strings), así que se
-construyen los dataclasses directamente en vez de correr los modelos
-reales."""
+(sin IA, en lenguaje llano) de cada módulo cuantitativo. Cada función
+es pura (recibe un resultado ya calculado, devuelve una lista de
+strings), así que se construyen los dataclasses directamente en vez
+de correr los modelos reales."""
 from __future__ import annotations
 
 import numpy as np
@@ -55,8 +55,8 @@ def test_interpret_garch_covers_convergence_stationarity_and_forecast():
     }
     bullets = interpret_garch(result, diagnostics, forecast)
     joined = " ".join(bullets)
-    assert "convergió" in joined
-    assert "estacionario" in joined
+    assert "terminó de ajustarse correctamente" in joined
+    assert "tiende a estabilizarse" in joined
     assert "subirá" in joined  # forecast (2.0) muy por encima de la vol actual (~1.5)
 
 
@@ -65,15 +65,23 @@ def test_interpret_garch_flags_non_convergence_and_non_stationarity():
     forecast = pd.Series(dtype=float)
     bullets = interpret_garch(result, None, forecast)
     joined = " ".join(bullets)
-    assert "no convergió" in joined
-    assert "no es estacionario" in joined
+    assert "no terminó de ajustarse bien" in joined
+    assert "podría no estabilizarse" in joined
 
 
-def test_interpret_garch_handles_missing_diagnostics():
+def test_interpret_garch_avoids_naming_the_underlying_statistical_tests():
+    """El objetivo explícito de este módulo es no exponer jerga
+    (nombres de tests estadísticos) a un lector no técnico."""
     result = _garch_result()
     forecast = pd.Series([1.5], index=pd.bdate_range("2025-01-01", periods=1))
-    bullets = interpret_garch(result, None, forecast)
-    assert all("Ljung-Box" not in b for b in bullets)
+    diagnostics = {
+        "ljung_box_pvalue": 0.01, "ljung_box_squared_pvalue": 0.01,
+        "arch_lm_pvalue": 0.01, "jarque_bera_pvalue": 0.01,
+    }
+    bullets = interpret_garch(result, diagnostics, forecast)
+    joined = " ".join(bullets)
+    for jargon in ("Ljung-Box", "ARCH-LM", "Jarque-Bera", "p-valor"):
+        assert jargon not in joined
 
 
 # ============================================================
@@ -92,34 +100,50 @@ def _coint_result(is_cointegrated=True, adf_pvalue=0.01) -> CointegrationResult:
     )
 
 
-def test_interpret_cointegration_cointegrated_fast_reversion():
-    bullets = interpret_cointegration(_coint_result(is_cointegrated=True), half_life_value=10.0)
+def test_interpret_cointegration_cointegrated_fast_reversion_uses_ticker_names():
+    bullets = interpret_cointegration(
+        _coint_result(is_cointegrated=True), half_life_value=10.0,
+        ticker_1="AAPL", ticker_2="MSFT",
+    )
     joined = " ".join(bullets)
-    assert "cointegración" in joined
-    assert "rápida" in joined
+    assert "AAPL y MSFT se mueven juntos" in joined
+    assert "favorable" in joined  # half-life corta
 
 
-def test_interpret_cointegration_not_cointegrated():
+def test_interpret_cointegration_not_cointegrated_without_ticker_names():
+    """Sin ticker_1/ticker_2, debe usar términos genéricos en vez de fallar."""
     bullets = interpret_cointegration(_coint_result(is_cointegrated=False), half_life_value=float("inf"))
     joined = " ".join(bullets)
-    assert "no encuentra cointegración" in joined
-    assert "indefinida" in joined
+    assert "no confirma" in joined
+    assert "no se puede estimar" in joined.lower()
 
 
 def test_interpret_cointegration_slow_reversion():
     bullets = interpret_cointegration(_coint_result(), half_life_value=90.0)
-    assert any("lenta" in b for b in bullets)
+    assert any("lento" in b for b in bullets)
+
+
+def test_interpret_cointegration_avoids_naming_the_underlying_statistical_tests():
+    bullets = interpret_cointegration(_coint_result(), half_life_value=10.0)
+    joined = " ".join(bullets)
+    for jargon in ("Engle-Granger", "ADF", "p-valor"):
+        assert jargon not in joined
 
 
 # ============================================================
 #  Fama-French
 # ============================================================
-def _ff_result(alpha_pvalue=0.01) -> FamaFrenchResult:
+def _ff_result(alpha_pvalue=0.01, all_betas_significant=False) -> FamaFrenchResult:
     betas = pd.Series({"Mkt-RF": 1.1, "SMB": 0.2, "HML": -0.1})
+    betas_pvalues = (
+        pd.Series({"Mkt-RF": 0.001, "SMB": 0.01, "HML": 0.02})
+        if all_betas_significant
+        else pd.Series({"Mkt-RF": 0.001, "SMB": 0.3, "HML": 0.4})
+    )
     return FamaFrenchResult(
         alpha=0.0005, alpha_pvalue=alpha_pvalue, alpha_tstat=2.5,
         betas=betas,
-        betas_pvalues=pd.Series({"Mkt-RF": 0.001, "SMB": 0.3, "HML": 0.4}),
+        betas_pvalues=betas_pvalues,
         betas_tstats=pd.Series({"Mkt-RF": 5.0, "SMB": 1.0, "HML": 0.8}),
         r_squared=0.75, adj_r_squared=0.74, n_obs=500,
         cov_type="HAC", maxlags=5, summary="...",
@@ -127,16 +151,25 @@ def _ff_result(alpha_pvalue=0.01) -> FamaFrenchResult:
 
 
 def test_interpret_fama_french_significant_alpha_and_all_factors():
-    bullets = interpret_fama_french(_ff_result(alpha_pvalue=0.01))
+    bullets = interpret_fama_french(_ff_result(alpha_pvalue=0.01, all_betas_significant=True))
     joined = " ".join(bullets)
-    assert "significativo" in joined
-    assert "Mkt-RF" in joined and "SMB" in joined and "HML" in joined
-    assert "alto" in joined  # r_squared 0.75
+    assert "no explicado" in joined
+    assert "más que el mercado" in joined  # Mkt-RF beta 1.1 > 1
+    assert "empresas pequeñas" in joined  # SMB beta positivo
+    assert "crecimiento" in joined  # HML beta negativo
+    assert "en gran parte" in joined  # r_squared 0.75
 
 
 def test_interpret_fama_french_non_significant_alpha():
     bullets = interpret_fama_french(_ff_result(alpha_pvalue=0.5))
-    assert any("no significativo" in b for b in bullets)
+    assert any("se explica bien" in b for b in bullets)
+
+
+def test_interpret_fama_french_no_significant_factors_says_so():
+    result = _ff_result(alpha_pvalue=0.5)
+    result.betas_pvalues = pd.Series({"Mkt-RF": 0.5, "SMB": 0.5, "HML": 0.5})
+    bullets = interpret_fama_french(result)
+    assert any("Ninguno de los factores" in b for b in bullets)
 
 
 # ============================================================
@@ -150,13 +183,21 @@ def test_interpret_risk_flags_non_normality_and_sharpe_bands():
     }
     bullets = interpret_risk(metrics, confidence=0.95)
     joined = " ".join(bullets)
-    assert "difieren en más de un 25%" in joined
-    assert "muy bueno" in joined
+    assert "resultados bastante distintos" in joined
+    assert "muy buena" in joined
 
 
 def test_interpret_risk_missing_keys_are_skipped_not_crashed():
     bullets = interpret_risk({"sharpe": -0.5}, confidence=0.95)
-    assert any("negativo" in b for b in bullets)
+    assert any("ha perdido valor" in b for b in bullets)
+
+
+def test_interpret_risk_avoids_naming_var_es_sharpe_as_such():
+    metrics = {"var_hist": 0.05, "sharpe": 1.5}
+    bullets = interpret_risk(metrics, confidence=0.95)
+    joined = " ".join(bullets)
+    for jargon in ("VaR", "Value at Risk", "Sharpe"):
+        assert jargon not in joined
 
 
 # ============================================================
@@ -182,12 +223,12 @@ def test_interpret_backtest_few_trades_warns_unreliable():
 
 def test_interpret_backtest_suspiciously_high_sharpe():
     bullets = interpret_backtest(_bt_result(sharpe=5.0))
-    assert any("sospechosamente alto" in b for b in bullets)
+    assert any("demasiado bueno para ser cierto" in b for b in bullets)
 
 
 def test_interpret_backtest_negative_sharpe():
     bullets = interpret_backtest(_bt_result(sharpe=-0.5))
-    assert any("pierde dinero" in b for b in bullets)
+    assert any("ha perdido dinero" in b for b in bullets)
 
 
 # ============================================================
@@ -210,19 +251,19 @@ def _wf_result(is_sharpe=2.0, oos_sharpe=1.8, embargo=0) -> WalkForwardResult:
 
 def test_interpret_walkforward_severe_degradation():
     bullets = interpret_walkforward(_wf_result(is_sharpe=2.0, oos_sharpe=0.5))
-    assert any("Degradación severa" in b for b in bullets)
+    assert any("empeora mucho" in b for b in bullets)
 
 
-def test_interpret_walkforward_acceptable_degradation_and_embargo_note():
+def test_interpret_walkforward_stable_result_and_no_margin_note():
     bullets = interpret_walkforward(_wf_result(is_sharpe=2.0, oos_sharpe=1.9, embargo=0))
     joined = " ".join(bullets)
-    assert "aceptable" in joined
-    assert "Sin **embargo**" in joined
+    assert "razonablemente parecido" in joined
+    assert "ningún margen" in joined
 
 
 def test_interpret_walkforward_with_embargo_configured():
     bullets = interpret_walkforward(_wf_result(embargo=5))
-    assert any("Embargo de **5 barras**" in b for b in bullets)
+    assert any("margen de **5 días**" in b for b in bullets)
 
 
 # ============================================================
@@ -240,14 +281,14 @@ def _opt_result() -> WalkForwardOptimizationResult:
 
 def test_interpret_optimization_without_dsr():
     bullets = interpret_optimization(_opt_result(), dsr=None)
-    assert any("combinaciones" in b for b in bullets)
+    assert any("configuraciones distintas" in b for b in bullets)
     assert all("Deflated" not in b for b in bullets)
 
 
 def test_interpret_optimization_with_low_dsr_warns():
     dsr = {"dsr": 0.6, "n_trials": 2}
     bullets = interpret_optimization(_opt_result(), dsr=dsr)
-    assert any("por debajo del umbral" in b for b in bullets)
+    assert any("trátalo con cautela" in b for b in bullets)
 
 
 def test_interpret_optimization_few_oos_trades_flagged():
@@ -283,9 +324,9 @@ def test_interpret_robustness_full_report():
     )
     bullets = interpret_robustness(report, _mc_result(positive_fraction=0.9), sens)
     joined = " ".join(bullets)
-    assert "75.0/100" in joined
+    assert "75 sobre 100" in joined
     assert "consistente" in joined
-    assert "no depende de" in joined
+    assert "no depende demasiado" in joined
 
 
 def test_interpret_robustness_low_probability_positive_and_low_stability():
@@ -297,5 +338,5 @@ def test_interpret_robustness_low_probability_positive_and_low_stability():
     )
     bullets = interpret_robustness(report, _mc_result(positive_fraction=0.3), sens)
     joined = " ".join(bullets)
-    assert "podría perder dinero" in joined
-    assert "baja estabilidad" in joined
+    assert "podría perder" in joined
+    assert "depende mucho" in joined

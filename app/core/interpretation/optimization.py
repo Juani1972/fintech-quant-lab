@@ -1,4 +1,7 @@
-"""Interpretación determinista (sin IA) de un grid search con walk-forward."""
+"""Interpretación determinista (sin IA) de un grid search con
+walk-forward, en lenguaje llano -- evita nombrar "Deflated Sharpe
+Ratio" como tal y explica el problema de "probar muchas
+combinaciones" en términos de suerte vs. ventaja real."""
 from __future__ import annotations
 
 from typing import Any
@@ -11,20 +14,20 @@ def interpret_optimization(
     dsr: dict[str, Any] | None,
 ) -> list[str]:
     """Interpreta un `WalkForwardOptimizationResult`: nº de
-    combinaciones, brecha IS/OOS de la ganadora y, si se calculó, el
-    Deflated Sharpe Ratio.
+    configuraciones probadas, si la ganadora se mantiene en datos
+    nuevos y, si se calculó, qué tan fiable es frente al azar.
 
     Args:
         result: resultado de `grid_search_walkforward()`.
-        dsr: salida de `deflated_sharpe_ratio()`, o None si no se calculó
-            (solo tiene sentido con `objective='sharpe'`).
+        dsr: salida de `deflated_sharpe_ratio()`, o None si no se calculó.
     """
     bullets: list[str] = []
 
     n_combos = len(result.grid)
     bullets.append(
-        f"**{n_combos} combinaciones** evaluadas por su rendimiento "
-        f"out-of-sample; ganadora: `{result.best_params}`."
+        f"Se probaron **{n_combos} configuraciones distintas** de la "
+        "estrategia, y esta fue la que mejor funcionó en los datos "
+        f"nuevos (no vistos durante el ajuste): `{result.best_params}`."
     )
 
     best_oos = result.best_oos_metrics.get(result.objective)
@@ -33,43 +36,46 @@ def interpret_optimization(
         gap = (best_is - best_oos) / abs(best_is)
         if gap > 0.5:
             bullets.append(
-                f"El **{result.objective}** OOS ({best_oos:.2f}) es muy "
-                f"inferior al IS ({best_is:.2f}, brecha {gap:.0%}) -- la "
-                "combinación ganadora podría estar sobreajustada al "
-                "periodo de entrenamiento."
+                "Esa configuración ganadora funciona **mucho peor** en "
+                "los datos nuevos que en los datos con los que se "
+                "escogió -- señal de que podría estar sobreajustada al "
+                "periodo de entrenamiento, no de que sea realmente la "
+                "mejor opción."
             )
         else:
             bullets.append(
-                f"El **{result.objective}** OOS ({best_oos:.2f}) se "
-                f"mantiene razonablemente cerca del IS ({best_is:.2f})."
+                "Esa configuración ganadora funciona de forma "
+                "**razonablemente parecida** en los datos nuevos que en "
+                "los datos con los que se escogió."
             )
 
     if dsr is not None:
         dsr_val = dsr.get("dsr")
-        n_trials = dsr.get("n_trials")
         if dsr_val is not None:
             if dsr_val < 0.95:
                 bullets.append(
-                    f"Deflated Sharpe Ratio = **{dsr_val:.1%}** (por debajo "
-                    f"del umbral habitual de 95%, sobre {n_trials} "
-                    "combinaciones probadas) -- el Sharpe ganador podría "
-                    "deberse en buena parte al azar de haber probado "
-                    "muchas combinaciones."
+                    "Cuantas más configuraciones se prueban, más fácil "
+                    "es que la 'ganadora' lo sea solo por azar, no "
+                    "porque tenga una ventaja real. Teniendo en cuenta "
+                    f"cuántas se probaron aquí, hay solo un "
+                    f"**{dsr_val:.0%}** de probabilidad de que el "
+                    "resultado ganador sea genuino y no un golpe de "
+                    "suerte -- trátalo con cautela."
                 )
             else:
                 bullets.append(
-                    f"Deflated Sharpe Ratio = **{dsr_val:.1%}** (sobre "
-                    f"{n_trials} combinaciones) -- por encima del umbral "
-                    "habitual de 95%, el resultado probablemente no es "
-                    "solo el máximo esperable por azar."
+                    "A pesar de haber probado varias configuraciones, "
+                    f"hay un **{dsr_val:.0%}** de probabilidad de que el "
+                    "resultado ganador sea genuino y no solo un golpe de "
+                    "suerte -- una señal favorable."
                 )
 
     oos_n_trades = result.best_oos_metrics.get("n_trades")
     if oos_n_trades is not None and oos_n_trades < 10:
         bullets.append(
-            f"La combinación ganadora solo generó **{int(oos_n_trades)} "
-            "operaciones OOS** -- demasiado pocas para confiar en sus "
-            "métricas por sí solas."
+            f"Esa configuración ganadora solo generó **{int(oos_n_trades)} "
+            "operaciones** en los datos nuevos -- demasiado pocas para "
+            "confiar en el resultado por sí solo."
         )
 
     return bullets

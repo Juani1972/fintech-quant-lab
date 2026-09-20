@@ -1,4 +1,6 @@
-"""Interpretación determinista (sin IA) de métricas de riesgo.
+"""Interpretación determinista (sin IA) de métricas de riesgo, en
+lenguaje llano -- evita nombrar "VaR", "Expected Shortfall", "Sharpe"
+etc. como tales y se centra en qué significan en la práctica.
 
 Recibe un diccionario de métricas ya calculadas por la página de
 Riesgo (no reimplementa los cálculos, ver `app.core.risk`) para no
@@ -21,88 +23,100 @@ def interpret_risk(metrics: dict[str, float | None], confidence: float) -> list[
         Lista de puntos en español llano.
     """
     bullets: list[str] = []
+    tail_prob = 1 - confidence
 
     var_hist = metrics.get("var_hist")
+    if var_hist is not None:
+        bullets.append(
+            f"Basándonos en lo que ha pasado históricamente, hay un "
+            f"{tail_prob:.0%} de probabilidad de perder más de un "
+            f"**{var_hist:.1%}** en un solo día."
+        )
+
     var_param = metrics.get("var_param")
     if var_hist is not None and var_param is not None and var_param > 1e-9:
         diff = abs(var_hist - var_param) / var_param
         if diff > 0.25:
             bullets.append(
-                f"VaR histórico ({var_hist:.2%}) y paramétrico "
-                f"({var_param:.2%}) difieren en más de un 25% -- indicio "
-                "de que los retornos no son normales (colas pesadas o "
-                "asimetría); prioriza el VaR de Cornish-Fisher o el "
-                "filtrado por GARCH sobre el paramétrico simple."
-            )
-        else:
-            bullets.append(
-                f"VaR histórico ({var_hist:.2%}) y paramétrico "
-                f"({var_param:.2%}) son similares -- la normalidad es una "
-                "aproximación razonable para esta serie."
+                "Dos formas distintas de estimar ese riesgo dan "
+                "resultados bastante distintos -- señal de que este "
+                "activo tiene movimientos más extremos de lo que una "
+                "campana de Gauss ('distribución normal') predeciría."
             )
 
     var_cf = metrics.get("var_cf")
     if var_cf is not None and var_param is not None and var_param > 1e-9 and var_cf > var_param * 1.1:
         bullets.append(
-            f"El VaR de Cornish-Fisher ({var_cf:.2%}), que corrige por "
-            f"asimetría y curtosis reales, es **mayor** que el paramétrico "
-            f"simple ({var_param:.2%}) -- el riesgo de cola es peor de lo "
-            "que sugiere una distribución normal."
+            "Teniendo en cuenta los movimientos extremos reales de este "
+            f"activo (no solo el promedio), la pérdida probable en un "
+            f"mal día sube a **{var_cf:.1%}** -- una estimación más "
+            "realista que la anterior."
         )
 
     es_hist = metrics.get("es_hist")
     if es_hist is not None and var_hist is not None and var_hist > 1e-9:
-        ratio = es_hist / var_hist
         bullets.append(
-            f"Expected Shortfall histórico ({es_hist:.2%}) es "
-            f"{ratio:.2f}x el VaR histórico -- la pérdida media **una vez "
-            f"superado** el VaR {confidence:.0%} es notablemente peor que "
-            "el propio umbral del VaR."
+            f"Y si ese mal día llega a ocurrir, la pérdida media en esos "
+            f"peores casos ronda el **{es_hist:.1%}** -- claramente peor "
+            "que el umbral anterior, porque solo tiene en cuenta los "
+            "escenarios más duros."
         )
 
     var_fhs = metrics.get("var_fhs")
     if var_fhs is not None and var_hist is not None and var_hist > 1e-9:
         if var_fhs > var_hist * 1.15:
             bullets.append(
-                f"El VaR filtrado por GARCH ({var_fhs:.2%}) es mayor que "
-                f"el histórico simple ({var_hist:.2%}) -- la volatilidad "
-                "pronosticada para hoy es más alta que el promedio "
-                "histórico usado por el VaR simple."
+                "El mercado está **más agitado de lo habitual** ahora "
+                "mismo, así que el riesgo real hoy es mayor que lo que "
+                "sugiere el promedio de todo el histórico."
             )
         elif var_fhs < var_hist * 0.85:
             bullets.append(
-                f"El VaR filtrado por GARCH ({var_fhs:.2%}) es menor que "
-                f"el histórico simple ({var_hist:.2%}) -- la volatilidad "
-                "pronosticada para hoy es más baja que el promedio "
-                "histórico usado por el VaR simple."
+                "El mercado está **más tranquilo de lo habitual** ahora "
+                "mismo, así que el riesgo real hoy es menor que lo que "
+                "sugiere el promedio de todo el histórico."
             )
 
     sharpe = metrics.get("sharpe")
     if sharpe is not None:
         if sharpe > 2:
-            bullets.append(f"Sharpe {sharpe:.2f}: **muy bueno** en términos absolutos.")
+            bullets.append(
+                "La relación entre lo que gana y el riesgo que asume es "
+                "**muy buena**: gana bastante en proporción a lo que se "
+                "arriesga."
+            )
         elif sharpe > 1:
-            bullets.append(f"Sharpe {sharpe:.2f}: **razonable**.")
+            bullets.append(
+                "La relación entre lo que gana y el riesgo que asume es "
+                "**razonable**."
+            )
         elif sharpe > 0:
-            bullets.append(f"Sharpe {sharpe:.2f}: **mediocre**, apenas compensa el riesgo asumido.")
+            bullets.append(
+                "La relación entre lo que gana y el riesgo que asume es "
+                "**floja**: apenas compensa el riesgo asumido."
+            )
         else:
-            bullets.append(f"Sharpe {sharpe:.2f}: **negativo**, el activo pierde valor ajustado a riesgo.")
+            bullets.append(
+                "En este periodo, el activo **ha perdido valor** una vez "
+                "descontado el riesgo asumido."
+            )
 
     sortino = metrics.get("sortino")
     if sortino is not None and sharpe is not None and sortino > sharpe * 1.3:
         bullets.append(
-            f"Sortino ({sortino:.2f}) notablemente mayor que Sharpe "
-            f"({sharpe:.2f}) -- la mayor parte de la volatilidad viene de "
-            "subidas, no de caídas."
+            "La mayor parte de sus altibajos vienen de **subidas**, no "
+            "de caídas -- una señal favorable que la relación anterior, "
+            "por sí sola, no distingue."
         )
 
     calmar = metrics.get("calmar")
     max_dd = metrics.get("max_dd")
     if calmar is not None and max_dd is not None:
+        verdict = "asumible" if calmar > 1 else "considerable en relación a lo que gana"
         bullets.append(
-            f"Calmar {calmar:.2f} con drawdown máximo de {abs(max_dd):.2%} "
-            "-- relaciona el retorno anual con la peor caída sufrida; "
-            "valores > 1 son razonables, > 3 son notables."
+            f"En su peor momento, este activo llegó a caer un "
+            f"**{abs(max_dd):.1%}** desde su punto más alto -- comparado "
+            f"con lo que gana al año, esa caída es **{verdict}**."
         )
 
     return bullets
