@@ -43,7 +43,7 @@ jobs:
         run: ruff check app/ tests/
 
       - name: Type check with mypy
-        run: mypy app/ --ignore-missing-imports
+        run: mypy --python-version ${{ matrix.python-version }} app/ --ignore-missing-imports
 
       - name: Run tests with coverage
         run: pytest tests/ -v --tb=short
