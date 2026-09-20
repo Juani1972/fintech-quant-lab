@@ -31,6 +31,13 @@ THEME = {
 # ============================================================
 PAGES = [
     {
+        "icon": "💹",
+        "name": "Rentabilidad",
+        "description": "Serie histórica de precios y rentabilidad de una o "
+                       "varias empresas en el periodo elegido -- al instante, "
+                       "sin configurar ningún modelo.",
+    },
+    {
         "icon": "📈",
         "name": "GARCH",
         "description": "Modelado de volatilidad condicional con diagnósticos de residuos "
