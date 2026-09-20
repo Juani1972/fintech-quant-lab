@@ -265,6 +265,44 @@ def test_riesgo_page_loads_with_filtered_var():
     assert not at.exception
 
 
+def test_rentabilidad_page_without_tickers_shows_warning_not_exception():
+    """Sin tickers configurados, la página debe mostrar el aviso
+    habitual -- no lanzar excepción."""
+    at = AppTest.from_file(str(APP_DIR / "pages" / "0_💹_Rentabilidad.py"), default_timeout=30)
+    at.session_state["global_tickers"] = ""
+    at.run()
+    assert not at.exception
+
+
+def test_rentabilidad_page_computes_period_return():
+    """Con tickers configurados, la página debe calcular y mostrar la
+    rentabilidad del periodo (precio final/precio inicial - 1) sin
+    necesitar ningún parámetro adicional ni clave de IA."""
+    from unittest.mock import patch
+
+    import numpy as np
+    import pandas as pd
+
+    idx = pd.bdate_range("2023-01-01", "2023-12-31")
+    # Serie determinista: sube linealmente de 100 a 150 -> +50% exacto.
+    prices = pd.DataFrame(
+        {"AAA": np.linspace(100, 150, len(idx))}, index=idx,
+    )
+
+    with patch("app.core.data_loader.load_prices", return_value=prices):
+        at = AppTest.from_file(str(APP_DIR / "pages" / "0_💹_Rentabilidad.py"), default_timeout=30)
+        at.session_state["global_tickers"] = "AAA"
+        at.run()
+
+    assert not at.exception
+    # La conclusión en lenguaje llano ("AAA ha ganado un 50.00%...") se
+    # renderiza como markdown -- más robusto de comprobar que el
+    # contenido interno de un st.dataframe(Styler) vía AppTest.
+    joined_markdown = " ".join(str(m.value) for m in at.markdown)
+    assert "50.00%" in joined_markdown
+    assert "AAA" in joined_markdown
+
+
 def test_experimentos_page_empty_state():
     """Página de Experimentos sin ningún experimento guardado todavía:
     debe mostrar el aviso informativo, no una excepción."""
