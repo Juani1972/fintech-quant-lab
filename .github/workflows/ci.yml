@@ -30,7 +30,13 @@ jobs:
 
       - name: Verify TOML and syntax
         run: |
-          python -c "import tomllib; tomllib.load(open('pyproject.toml','rb'))"
+          python -c "
+          try:
+              import tomllib
+          except ModuleNotFoundError:
+              import tomli as tomllib
+          tomllib.load(open('pyproject.toml', 'rb'))
+          "
           python -m compileall -q app/ tests/
 
       - name: Lint with ruff

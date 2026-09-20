@@ -294,14 +294,13 @@ with st.sidebar:
     )
 
     LOCAL_MODE = os.getenv("FQL_LOCAL_MODE", "true").lower() == "true"
-    if LOCAL_MODE:
-        if st.button(
-            "🚪 Cerrar aplicación",
-            type="secondary",
-            use_container_width=True,
-        ):
-            st.warning("Cerrando Fintech Quant Lab...")
-            os.kill(os.getpid(), signal.SIGTERM)
+    if LOCAL_MODE and st.button(
+        "🚪 Cerrar aplicación",
+        type="secondary",
+        use_container_width=True,
+    ):
+        st.warning("Cerrando Fintech Quant Lab...")
+        os.kill(os.getpid(), signal.SIGTERM)
 
 
 # ============================================================
