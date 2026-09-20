@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.core.ai_report import AIReportError, generate_report
+from app.core.ai_report import AIReportError, generate_report, list_available_models
 
 
 def _fake_response(status_code=200, json_data=None, text=""):
@@ -163,3 +163,55 @@ def test_generate_report_temperature_passed_through():
         generate_report("prompt", api_key="clave-123", temperature=0.7)
     body = mock_post.call_args.kwargs["json"]
     assert body["generationConfig"]["temperature"] == 0.7
+
+
+# ============================================================
+#  list_available_models
+# ============================================================
+def test_list_available_models_filters_generate_content_and_sorts():
+    payload = {
+        "models": [
+            {"name": "models/gemini-3.6-flash", "supportedGenerationMethods": ["generateContent"]},
+            {"name": "models/embedding-001", "supportedGenerationMethods": ["embedContent"]},
+            {"name": "models/gemini-3.6-pro", "supportedGenerationMethods": ["generateContent", "countTokens"]},
+        ],
+    }
+    with patch("app.core.ai_report.requests.get", return_value=_fake_response(200, payload)) as mock_get:
+        models = list_available_models("clave-123")
+
+    assert models == ["gemini-3.6-flash", "gemini-3.6-pro"]
+    assert mock_get.call_args.kwargs["headers"]["x-goog-api-key"] == "clave-123"
+
+
+def test_list_available_models_follows_pagination():
+    page1 = {
+        "models": [{"name": "models/a", "supportedGenerationMethods": ["generateContent"]}],
+        "nextPageToken": "tok",
+    }
+    page2 = {
+        "models": [{"name": "models/b", "supportedGenerationMethods": ["generateContent"]}],
+    }
+    with patch(
+        "app.core.ai_report.requests.get",
+        side_effect=[_fake_response(200, page1), _fake_response(200, page2)],
+    ) as mock_get:
+        models = list_available_models("clave-123")
+
+    assert models == ["a", "b"]
+    assert mock_get.call_count == 2
+    assert mock_get.call_args.kwargs["params"]["pageToken"] == "tok"
+
+
+def test_list_available_models_missing_key_raises_without_network_call():
+    with patch("app.core.ai_report.requests.get") as mock_get, pytest.raises(
+        AIReportError, match="No hay clave"
+    ):
+        list_available_models("")
+    mock_get.assert_not_called()
+
+
+def test_list_available_models_invalid_key():
+    with patch(
+        "app.core.ai_report.requests.get", return_value=_fake_response(400),
+    ), pytest.raises(AIReportError, match="Clave de API rechazada"):
+        list_available_models("clave-mala")
