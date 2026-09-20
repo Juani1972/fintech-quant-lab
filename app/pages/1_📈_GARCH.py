@@ -13,6 +13,7 @@ from app.core.garch import (
     residual_diagnostics,
 )
 from app.core.plotting import line_chart
+from app.core.report import build_ai_report_pdf
 from app.state import (
     ensure_session_initialized,
     get_gemini_api_key,
@@ -289,6 +290,19 @@ if run:
 
         if st.session_state.get("garch_ai_report"):
             st.markdown(st.session_state["garch_ai_report"])
+            st.download_button(
+                "📄 Descargar informe en PDF",
+                build_ai_report_pdf(
+                    title="Informe con IA — GARCH",
+                    meta={
+                        "Ticker": ticker,
+                        "Modelo": f"{vol} (p={p}, q={q}, dist={dist})",
+                    },
+                    report_text=st.session_state["garch_ai_report"],
+                ),
+                file_name=f"informe_ia_garch_{ticker}.pdf",
+                mime="application/pdf",
+            )
 
     with st.expander("📋 Resumen completo del modelo"):
         st.text(result.model_result.summary().as_text())

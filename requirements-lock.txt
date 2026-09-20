@@ -19,6 +19,8 @@ matplotlib==3.9.0
 plotly==5.22.0
 hmmlearn==0.3.3
 requests==2.33.1
+markdown==3.10.3
+fpdf2==2.8.8
 
 # Dev
 pytest==8.2.2

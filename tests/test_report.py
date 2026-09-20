@@ -11,6 +11,7 @@ from app.core.report import (
     _metrics_grid_html,
     _params_table_html,
     _trades_table_html,
+    build_ai_report_pdf,
     build_backtest_report,
     build_walkforward_report,
 )
@@ -206,3 +207,36 @@ def test_build_walkforward_report_shows_degradation(equity_curve):
         n_windows=5,
     )
     assert "Degradación" in html
+
+
+# ============================================================
+#  build_ai_report_pdf
+# ============================================================
+def test_build_ai_report_pdf_returns_valid_pdf_bytes():
+    pdf_bytes = build_ai_report_pdf(
+        title="Informe con IA — GARCH",
+        meta={"Ticker": "AAPL", "Modelo": "EGARCH (p=1, q=1)"},
+        report_text="## Resumen\n\nLa **volatilidad** es alta.",
+    )
+    assert isinstance(pdf_bytes, bytes)
+    assert pdf_bytes.startswith(b"%PDF-")
+    assert len(pdf_bytes) > 500
+
+
+def test_build_ai_report_pdf_handles_non_latin1_characters():
+    """Regresión: los core fonts de fpdf2 (helvetica) solo soportan
+    latin-1, y Gemini devuelve con frecuencia rayas largas (—),
+    comillas tipográficas o viñetas fuera de ese rango -- antes esto
+    lanzaba FPDFUnicodeEncodingException. build_ai_report_pdf usa
+    DejaVu Sans (incluida con matplotlib) para cubrir Unicode."""
+    pdf_bytes = build_ai_report_pdf(
+        title="Título con raya — y emoji 🚀",
+        meta={"Nota": "comillas “curvas” y viñeta •"},
+        report_text="Texto — con raya larga, comillas “curvas” y viñeta •.",
+    )
+    assert pdf_bytes.startswith(b"%PDF-")
+
+
+def test_build_ai_report_pdf_empty_report_text_does_not_crash():
+    pdf_bytes = build_ai_report_pdf(title="Vacío", meta={}, report_text="")
+    assert pdf_bytes.startswith(b"%PDF-")

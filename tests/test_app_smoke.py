@@ -39,6 +39,34 @@ def test_sidebar_has_global_inputs():
     assert len(at.sidebar.date_input) >= 2
 
 
+def test_apply_tickers_does_not_revert_universe_selection():
+    """Regresión: elegir un universo predefinido actualiza
+    `global_tickers` de inmediato, pero el campo de texto del
+    formulario (`_tickers_form_input`) no se refrescaba -- así que al
+    pulsar "Aplicar tickers" ese valor viejo pisaba el cambio recién
+    hecho y la lista de tickers volvía a la anterior."""
+    at = AppTest.from_file(str(APP_DIR / "main.py"), default_timeout=30)
+    at.run()
+
+    before = at.session_state["global_tickers"]
+    universe_select = next(
+        w for w in at.selectbox if w.key == "_universe_select"
+    )
+    new_universe = next(o for o in universe_select.options if o != "(personalizado)")
+    at = universe_select.select(new_universe).run()
+
+    after_select = at.session_state["global_tickers"]
+    assert after_select != before
+    assert at.session_state["_tickers_form_input"] == after_select
+
+    apply_button = next(
+        b for b in at.button if "Aplicar tickers" in (b.label or "")
+    )
+    at = apply_button.click().run()
+
+    assert at.session_state["global_tickers"] == after_select
+
+
 def test_all_pages_compile_and_have_setup():
     """Cada página debe llamar a page_setup() al inicio."""
     pages_dir = APP_DIR / "pages"
@@ -739,3 +767,34 @@ if st.session_state.get("ai_report"):
         assert not at2.exception
         errors = [e.value for e in at2.error]
         assert any("429" in (e or "") for e in errors)
+
+
+def test_ai_report_pdf_download_button_appears_isolated():
+    """Regresión: junto al informe con IA mostrado en pantalla, debe
+    aparecer un botón para descargarlo en PDF (build_ai_report_pdf),
+    sin excepción. Igual que test_generate_report_roundtrip_isolated,
+    aislado del resto de la página para no depender de red."""
+    script = """
+import streamlit as st
+from app.core.report import build_ai_report_pdf
+
+st.session_state.setdefault("ai_report", "## Informe\\nContenido con é, ñ y — raya.")
+
+if st.session_state.get("ai_report"):
+    st.markdown(st.session_state["ai_report"])
+    st.download_button(
+        "📄 Descargar informe en PDF",
+        build_ai_report_pdf(
+            title="Informe con IA — Test",
+            meta={"Ticker": "AAPL"},
+            report_text=st.session_state["ai_report"],
+        ),
+        file_name="informe_ia_test.pdf",
+        mime="application/pdf",
+    )
+"""
+    at = AppTest.from_string(script, default_timeout=15)
+    at.run()
+    assert not at.exception
+    pdf_buttons = [b for b in at.get("download_button") if "PDF" in (b.label or "")]
+    assert len(pdf_buttons) == 1

@@ -13,12 +13,18 @@ más allá de la primera carga.
 """
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from html import escape
 from typing import Any
 
+import markdown as _markdown
 import pandas as pd
 import plotly.graph_objects as go
+from fpdf import FPDF
+from fpdf.enums import XPos, YPos
+from fpdf.fonts import TextStyle
+from matplotlib import get_data_path as _mpl_data_path
 
 # ============================================================
 #  CSS embebido
@@ -433,6 +439,105 @@ def build_backtest_report(
 </html>"""
 
     return html
+
+
+# ============================================================
+#  Informe de IA (Gemini) en PDF
+# ============================================================
+# fpdf2 en vez de un motor HTML->PDF completo (weasyprint, xhtml2pdf):
+# el informe de IA es solo texto (sin gráficos Plotly que reproducir),
+# y fpdf2 es una dependencia ligera y pura-Python -- coherente con el
+# resto de conectores externos del proyecto (ver app/core/ai_report.py).
+_PDF_BLUE = (37, 99, 235)  # #2563eb, mismo azul que los <h1> del HTML
+_PDF_GRAY = (100, 116, 139)  # #64748b, mismo gris que .subtitle
+_PDF_INK = (30, 41, 59)  # #1e293b, mismo color de texto que el HTML
+_PDF_AMBER = (146, 64, 14)  # tono del disclaimer (.callout-warning)
+
+
+def _register_unicode_font(pdf: FPDF) -> str:
+    """Registra DejaVu Sans (viene incluida con matplotlib, ya una
+    dependencia del proyecto) y devuelve el nombre de familia a usar.
+
+    Los "core fonts" de PDF (helvetica, times...) solo soportan
+    latin-1 -- Gemini devuelve con frecuencia rayas largas, comillas
+    tipográficas u otros caracteres fuera de ese rango, y el PDF
+    fallaba al generarse. DejaVu Sans cubre Unicode con normalidad y
+    evita añadir una dependencia nueva solo para tipografías.
+    """
+    fonts_dir = os.path.join(_mpl_data_path(), "fonts", "ttf")
+    pdf.add_font("DejaVu", "", os.path.join(fonts_dir, "DejaVuSans.ttf"))
+    pdf.add_font("DejaVu", "B", os.path.join(fonts_dir, "DejaVuSans-Bold.ttf"))
+    pdf.add_font("DejaVu", "I", os.path.join(fonts_dir, "DejaVuSans-Oblique.ttf"))
+    return "DejaVu"
+
+
+def build_ai_report_pdf(
+    title: str,
+    meta: dict[str, Any],
+    report_text: str,
+) -> bytes:
+    """Construye un PDF del informe generado con IA (Gemini), con el
+    mismo lenguaje visual que los informes HTML (cabecera azul,
+    metadatos, disclaimer).
+
+    Args:
+        title: título del informe (p.ej. "Informe con IA — GARCH").
+        meta: metadatos a mostrar (ticker, parámetros del modelo...).
+        report_text: texto en markdown devuelto por Gemini.
+
+    Returns:
+        Contenido del PDF como bytes, listo para `st.download_button`.
+    """
+    pdf = FPDF(format="A4")
+    pdf.set_auto_page_break(auto=True, margin=20)
+    pdf.add_page()
+    font = _register_unicode_font(pdf)
+
+    pdf.set_font(font, "B", 18)
+    pdf.set_text_color(*_PDF_BLUE)
+    pdf.multi_cell(0, 9, title, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    pdf.set_font(font, "", 9)
+    pdf.set_text_color(*_PDF_GRAY)
+    pdf.multi_cell(0, 5, f"Generado: {ts}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.ln(3)
+
+    pdf.set_text_color(*_PDF_INK)
+    for label, value in meta.items():
+        pdf.set_font(font, "B", 9)
+        pdf.write(6, f"{str(label)}: ")
+        pdf.set_font(font, "", 9)
+        pdf.write(6, f"{str(value)}\n")
+    pdf.ln(4)
+
+    pdf.set_font(font, "", 11)
+    pdf.set_text_color(*_PDF_INK)
+    heading_style = TextStyle(font_family=font, font_style="B", color=_PDF_BLUE)
+    pdf.write_html(
+        _markdown.markdown(report_text),
+        font_family=font,
+        li_prefix_color=_PDF_INK,
+        tag_styles={
+            "h1": heading_style, "h2": heading_style, "h3": heading_style,
+            "h4": heading_style, "h5": heading_style, "h6": heading_style,
+        },
+    )
+    pdf.ln(6)
+
+    pdf.set_font(font, "I", 8)
+    pdf.set_text_color(*_PDF_AMBER)
+    pdf.multi_cell(
+        0, 5,
+        "Disclaimer: este informe combina cálculos de la app con texto "
+        "generado por un modelo de IA (Google Gemini) a partir de esos "
+        "cálculos. Es educativo y de investigación, no constituye "
+        "asesoramiento financiero. Verifica siempre los datos antes de "
+        "cualquier uso real.",
+        new_x=XPos.LMARGIN, new_y=YPos.NEXT,
+    )
+
+    return bytes(pdf.output())
 
 
 def build_walkforward_report(
