@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import requests
 
-DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_MODEL = "gemini-3.6-flash"
 API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 DEFAULT_TIMEOUT = 30
 
@@ -39,10 +39,13 @@ def generate_report(
         prompt: el prompt completo (instrucciones + datos a
             interpretar), ya en texto plano.
         api_key: clave de API de Google AI Studio del propio usuario.
-        model: nombre del modelo. Por defecto 'gemini-2.5-flash'
+        model: nombre del modelo. Por defecto 'gemini-3.6-flash'
             (gratuito en Google AI Studio a fecha de esta versión --
             los nombres y niveles gratuitos de Gemini cambian con
-            cierta frecuencia, así que se puede indicar otro).
+            cierta frecuencia -- Google retira modelos antiguos y
+            avisa en el propio error 404 cuál usar en su lugar --,
+            así que se puede indicar otro desde la barra lateral sin
+            tocar código).
         temperature: 0.0-1.0 -- más bajo = más determinista/ceñido a
             los datos, más alto = más "creativo". 0.3 por defecto:
             para un informe financiero interesa que se ciña a los
@@ -92,6 +95,15 @@ def generate_report(
             "Límite de peticiones alcanzado (429) -- el nivel gratuito "
             "de Google AI Studio tiene un tope diario/por minuto. "
             "Espera un poco y vuelve a intentarlo."
+        )
+    if resp.status_code == 404:
+        raise AIReportError(
+            f"El modelo '{model}' no existe o ya no está disponible "
+            "(404) -- Google retira modelos de Gemini de vez en "
+            "cuando. Prueba con otro nombre en el campo 'Modelo' de "
+            "la barra lateral ('🤖 Informes con IA'); el propio "
+            "mensaje de error de Google suele indicar el modelo "
+            f"vigente que lo sustituye:\n\n{resp.text[:300]}"
         )
     if resp.status_code != 200:
         raise AIReportError(
