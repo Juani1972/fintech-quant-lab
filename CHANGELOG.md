@@ -7,6 +7,23 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Added
+- **Informes con IA (Google Gemini)**: nuevas páginas GARCH y Backtest
+  pueden generar un informe interpretando los resultados con Gemini
+  (`app/core/ai_report.py`), con gestión de credenciales en cascada
+  (`app/credentials.py`).
+- **Exportar informe de IA a PDF**: junto al informe generado con
+  Gemini (GARCH, Backtest), botón para descargarlo en PDF con el
+  mismo lenguaje visual que los informes HTML existentes
+  (`build_ai_report_pdf` en `app/core/report.py`).
+
+### Fixed
+- **Sidebar**: elegir un universo predefinido o una empresa por el
+  buscador actualizaba `global_tickers` pero no el campo del
+  formulario de tickers -- al pulsar "✅ Aplicar tickers" ese campo,
+  con el valor viejo, sobrescribía el cambio recién hecho y revertía
+  la selección.
+
 ### Planned
 - Despliegue público en Streamlit Cloud.
 - Capturas de pantalla en el README.

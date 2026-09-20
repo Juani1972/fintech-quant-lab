@@ -26,7 +26,7 @@ from app.core.cointegration import (
 from app.core.data_loader import load_prices
 from app.core.experiments import ExperimentError, save_experiment
 from app.core.history import init_db, save_run
-from app.core.report import build_backtest_report
+from app.core.report import build_ai_report_pdf, build_backtest_report
 from app.state import (
     ensure_session_initialized,
     get_gemini_api_key,
@@ -466,6 +466,20 @@ if run:
 
         if st.session_state.get("bt_ai_report"):
             st.markdown(st.session_state["bt_ai_report"])
+            st.download_button(
+                "📄 Descargar informe en PDF",
+                build_ai_report_pdf(
+                    title="Informe con IA — Backtest",
+                    meta={
+                        "Estrategia": strategy,
+                        "Tickers": ticker_a + (f", {ticker_b}" if ticker_b else ""),
+                        "Periodo": f"{start} a {end}",
+                    },
+                    report_text=st.session_state["bt_ai_report"],
+                ),
+                file_name=f"informe_ia_backtest_{strategy.replace(' ', '_').lower()}.pdf",
+                mime="application/pdf",
+            )
 
     section("📈 Curva de capital")
     bh = buy_and_hold(benchmark_prices, initial_capital=initial_capital)
