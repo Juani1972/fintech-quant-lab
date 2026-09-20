@@ -40,7 +40,7 @@ def test_generate_report_success():
     # Confirmar que la clave va en el header correcto, no en la URL/body
     call_kwargs = mock_post.call_args.kwargs
     assert call_kwargs["headers"]["x-goog-api-key"] == "clave-123"
-    assert "gemini-2.5-flash" in mock_post.call_args.args[0]
+    assert "gemini-3.6-flash" in mock_post.call_args.args[0]
 
 
 def test_generate_report_joins_multiple_parts():
@@ -84,6 +84,21 @@ def test_generate_report_rate_limited_429():
 def test_generate_report_bad_request_400():
     with patch("app.core.ai_report.requests.post", return_value=_fake_response(400)), pytest.raises(AIReportError, match="Petición rechazada"):
             generate_report("prompt", api_key="clave-123", model="modelo-que-no-existe")
+
+
+def test_generate_report_model_not_found_404():
+    """Regresión: Google retira modelos de Gemini periódicamente (así
+    pasó con 'gemini-2.5-flash', el DEFAULT_MODEL original) y responde
+    404 con un mensaje que indica el modelo de reemplazo -- el error
+    debe nombrar el modelo pedido e incluir el texto de Google, no
+    solo un "404" genérico."""
+    with patch(
+        "app.core.ai_report.requests.post",
+        return_value=_fake_response(
+            404, text='{"error": {"message": "model X no longer available, use Y"}}',
+        ),
+    ), pytest.raises(AIReportError, match="modelo-viejo.*ya no está disponible"):
+        generate_report("prompt", api_key="clave-123", model="modelo-viejo")
 
 
 def test_generate_report_generic_http_error():

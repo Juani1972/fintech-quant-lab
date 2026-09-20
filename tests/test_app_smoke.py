@@ -863,14 +863,20 @@ def test_ai_report_section_loads_without_key_and_without_exception(page_path, se
 
 
 def test_gemini_settings_seeded_with_correct_default():
-    """Regresión: la portada debe sembrar gemini_model con el valor por
-    defecto correcto ('gemini-2.5-flash') al iniciar una sesión nueva --
+    """Regresión: la portada debe sembrar gemini_model con
+    app.core.ai_report.DEFAULT_MODEL al iniciar una sesión nueva --
     detectamos y arreglamos un bug donde salía vacío porque main.py tiene
-    su propia inicialización de sesión, separada de ensure_session_initialized()."""
+    su propia inicialización de sesión, separada de ensure_session_initialized().
+
+    Compara contra la constante (no un string literal) para que este
+    test no se quede desactualizado si el modelo por defecto cambia
+    -- como ya pasó una vez, cuando Google retiró 'gemini-2.5-flash'."""
+    from app.core.ai_report import DEFAULT_MODEL
+
     at = AppTest.from_file(str(APP_DIR.parent / "app" / "main.py"), default_timeout=30)
     at.run()
     assert not at.exception
-    assert at.session_state["gemini_model"] == "gemini-2.5-flash"
+    assert at.session_state["gemini_model"] == DEFAULT_MODEL
 
 
 def test_generate_report_roundtrip_isolated():
