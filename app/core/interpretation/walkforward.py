@@ -35,16 +35,17 @@ def interpret_walkforward(result: WalkForwardResult) -> list[str]:
         degradation = (is_sharpe - oos_sharpe) / abs(is_sharpe)
         if degradation > 0.5:
             bullets.append(
-                "El resultado **empeora mucho** al pasar de los datos de "
-                "entrenamiento a los datos nuevos -- fuerte señal de que "
-                "la estrategia se ha ajustado demasiado al pasado y "
-                "podría no funcionar igual de bien en el futuro."
+                f"El resultado **empeora mucho** ({degradation:.0%}) al "
+                "pasar de los datos de entrenamiento a los datos nuevos "
+                "-- fuerte señal de que la estrategia se ha ajustado "
+                "demasiado al pasado y podría no funcionar igual de bien "
+                "en el futuro."
             )
         elif degradation > 0.25:
             bullets.append(
-                "El resultado **empeora de forma moderada** al pasar a "
-                "datos nuevos -- normal hasta cierto punto, pero "
-                "conviene vigilarlo."
+                f"El resultado **empeora de forma moderada** "
+                f"({degradation:.0%}) al pasar a datos nuevos -- normal "
+                "hasta cierto punto, pero conviene vigilarlo."
             )
         else:
             bullets.append(

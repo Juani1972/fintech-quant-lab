@@ -38,10 +38,11 @@ def interpret_risk(metrics: dict[str, float | None], confidence: float) -> list[
         diff = abs(var_hist - var_param) / var_param
         if diff > 0.25:
             bullets.append(
-                "Dos formas distintas de estimar ese riesgo dan "
-                "resultados bastante distintos -- señal de que este "
-                "activo tiene movimientos más extremos de lo que una "
-                "campana de Gauss ('distribución normal') predeciría."
+                f"Dos formas distintas de estimar ese riesgo dan "
+                f"resultados bastante distintos ({var_hist:.1%} frente a "
+                f"{var_param:.1%}) -- señal de que este activo tiene "
+                "movimientos más extremos de lo que una campana de Gauss "
+                "('distribución normal') predeciría."
             )
 
     var_cf = metrics.get("var_cf")
@@ -66,39 +67,44 @@ def interpret_risk(metrics: dict[str, float | None], confidence: float) -> list[
     if var_fhs is not None and var_hist is not None and var_hist > 1e-9:
         if var_fhs > var_hist * 1.15:
             bullets.append(
-                "El mercado está **más agitado de lo habitual** ahora "
-                "mismo, así que el riesgo real hoy es mayor que lo que "
-                "sugiere el promedio de todo el histórico."
+                f"El mercado está **más agitado de lo habitual** ahora "
+                f"mismo: la pérdida probable en un mal día sube a "
+                f"**{var_fhs:.1%}** teniendo esto en cuenta, frente al "
+                f"{var_hist:.1%} que sugiere el promedio de todo el "
+                "histórico."
             )
         elif var_fhs < var_hist * 0.85:
             bullets.append(
-                "El mercado está **más tranquilo de lo habitual** ahora "
-                "mismo, así que el riesgo real hoy es menor que lo que "
-                "sugiere el promedio de todo el histórico."
+                f"El mercado está **más tranquilo de lo habitual** ahora "
+                f"mismo: la pérdida probable en un mal día baja a "
+                f"**{var_fhs:.1%}** teniendo esto en cuenta, frente al "
+                f"{var_hist:.1%} que sugiere el promedio de todo el "
+                "histórico."
             )
 
     sharpe = metrics.get("sharpe")
     if sharpe is not None:
         if sharpe > 2:
             bullets.append(
-                "La relación entre lo que gana y el riesgo que asume es "
-                "**muy buena**: gana bastante en proporción a lo que se "
-                "arriesga."
+                f"La relación entre lo que gana y el riesgo que asume es "
+                f"**muy buena** (ratio de {sharpe:.2f}): gana bastante en "
+                "proporción a lo que se arriesga."
             )
         elif sharpe > 1:
             bullets.append(
                 "La relación entre lo que gana y el riesgo que asume es "
-                "**razonable**."
+                f"**razonable** (ratio de {sharpe:.2f})."
             )
         elif sharpe > 0:
             bullets.append(
                 "La relación entre lo que gana y el riesgo que asume es "
-                "**floja**: apenas compensa el riesgo asumido."
+                f"**floja** (ratio de {sharpe:.2f}): apenas compensa el "
+                "riesgo asumido."
             )
         else:
             bullets.append(
-                "En este periodo, el activo **ha perdido valor** una vez "
-                "descontado el riesgo asumido."
+                f"En este periodo, el activo **ha perdido valor** (ratio "
+                f"de {sharpe:.2f}) una vez descontado el riesgo asumido."
             )
 
     sortino = metrics.get("sortino")
