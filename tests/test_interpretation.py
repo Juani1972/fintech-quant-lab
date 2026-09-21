@@ -55,7 +55,7 @@ def test_interpret_garch_covers_convergence_stationarity_and_forecast():
     }
     bullets = interpret_garch(result, diagnostics, forecast)
     joined = " ".join(bullets)
-    assert "terminó de ajustarse correctamente" in joined
+    assert "terminó de calcularse correctamente" in joined
     assert "tiende a estabilizarse" in joined
     assert "subirá" in joined  # forecast (2.0) muy por encima de la vol actual (~1.5)
 
@@ -67,6 +67,36 @@ def test_interpret_garch_flags_non_convergence_and_non_stationarity():
     joined = " ".join(bullets)
     assert "no terminó de ajustarse bien" in joined
     assert "podría no estabilizarse" in joined
+
+
+def test_interpret_garch_omits_fat_tails_bullet_for_the_common_case():
+    """Regresión: las colas pesadas (jb < 0.05) son la norma en
+    retornos diarios de bolsa -- casi cualquier empresa las tiene, así
+    que no aporta nada distinguir un informe de otro. El caso
+    informativo es el contrario (residuos que sí parecen normales)."""
+    result = _garch_result()
+    forecast = pd.Series([1.5], index=pd.bdate_range("2025-01-01", periods=1))
+    diagnostics_common = {
+        "ljung_box_pvalue": 0.5, "ljung_box_squared_pvalue": 0.5,
+        "arch_lm_pvalue": 0.5, "jarque_bera_pvalue": 0.01,
+    }
+    bullets_common = interpret_garch(result, diagnostics_common, forecast)
+    assert not any("movimientos más extremos" in b for b in bullets_common)
+
+    diagnostics_rare = dict(diagnostics_common, jarque_bera_pvalue=0.5)
+    bullets_rare = interpret_garch(result, diagnostics_rare, forecast)
+    assert any("movimientos más extremos" in b for b in bullets_rare)
+
+
+def test_interpret_garch_merges_healthy_fit_checks_into_one_bullet():
+    """Regresión: converger y ser estacionario casi siempre van juntos
+    en datos reales -- antes salían como dos frases casi calcadas en
+    cada informe; ahora se fusionan en una sola cuando ambas van bien."""
+    result = _garch_result(converged=True, stationary=True)
+    forecast = pd.Series([1.5], index=pd.bdate_range("2025-01-01", periods=1))
+    bullets = interpret_garch(result, None, forecast)
+    fit_bullets = [b for b in bullets if "ajuste técnico es sólido" in b]
+    assert len(fit_bullets) == 1
 
 
 def test_interpret_garch_avoids_naming_the_underlying_statistical_tests():

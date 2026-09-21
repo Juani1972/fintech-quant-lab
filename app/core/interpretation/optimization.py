@@ -36,17 +36,18 @@ def interpret_optimization(
         gap = (best_is - best_oos) / abs(best_is)
         if gap > 0.5:
             bullets.append(
-                "Esa configuración ganadora funciona **mucho peor** en "
-                "los datos nuevos que en los datos con los que se "
-                "escogió -- señal de que podría estar sobreajustada al "
-                "periodo de entrenamiento, no de que sea realmente la "
-                "mejor opción."
+                f"Esa configuración ganadora funciona **mucho peor** "
+                f"({gap:.0%} de diferencia) en los datos nuevos que en "
+                "los datos con los que se escogió -- señal de que podría "
+                "estar sobreajustada al periodo de entrenamiento, no de "
+                "que sea realmente la mejor opción."
             )
         else:
             bullets.append(
-                "Esa configuración ganadora funciona de forma "
-                "**razonablemente parecida** en los datos nuevos que en "
-                "los datos con los que se escogió."
+                f"Esa configuración ganadora funciona de forma "
+                f"**razonablemente parecida** ({gap:.0%} de diferencia) "
+                "en los datos nuevos que en los datos con los que se "
+                "escogió."
             )
 
     if dsr is not None:

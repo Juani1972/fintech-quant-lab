@@ -38,24 +38,29 @@ def interpret_backtest(result: BacktestResult) -> list[str]:
     sharpe = m.get("sharpe")
     if sharpe is not None and sharpe == sharpe:  # descarta NaN
         if sharpe < 0:
-            bullets.append("La estrategia **ha perdido dinero** una vez descontado el riesgo asumido.")
+            bullets.append(
+                f"La estrategia **ha perdido dinero** (ratio de "
+                f"{sharpe:.2f}) una vez descontado el riesgo asumido."
+            )
         elif sharpe > 3:
             bullets.append(
-                "El resultado parece **demasiado bueno para ser cierto** "
-                "-- antes de confiar en él, revisa la página de "
-                "Optimización: con pocas operaciones, un resultado así "
-                "suele deberse a que la estrategia se ha ajustado "
-                "demasiado a estos datos concretos, no a una ventaja real."
+                f"El resultado parece **demasiado bueno para ser cierto** "
+                f"(ratio de {sharpe:.2f}) -- antes de confiar en él, "
+                "revisa la página de Optimización: con pocas operaciones, "
+                "un resultado así suele deberse a que la estrategia se ha "
+                "ajustado demasiado a estos datos concretos, no a una "
+                "ventaja real."
             )
         elif sharpe < 1:
             bullets.append(
-                "La relación entre lo que gana y el riesgo que asume es "
-                "**floja** -- no destaca frente a algo tan simple como "
-                "comprar y mantener."
+                f"La relación entre lo que gana y el riesgo que asume es "
+                f"**floja** (ratio de {sharpe:.2f}) -- no destaca frente "
+                "a algo tan simple como comprar y mantener."
             )
         else:
             bullets.append(
-                "La relación entre lo que gana y el riesgo que asume es **razonable**."
+                "La relación entre lo que gana y el riesgo que asume es "
+                f"**razonable** (ratio de {sharpe:.2f})."
             )
 
     win_rate = m.get("win_rate")
